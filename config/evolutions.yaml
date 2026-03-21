@@ -1,0 +1,118 @@
+version: 2.0
+registry_name: usna_screener_evos
+
+# Build contract for every evolution sheet.
+sheet_defaults:
+  roster_columns:
+    - field: first
+      header: First
+      source_field: first
+      locked: true
+    - field: last
+      header: Last
+      source_field: last
+      locked: true
+    - field: uid
+      header: UID
+      source_field: uid
+      locked: true
+  freeze_panes: D2
+  header_row: 1
+  first_candidate_row: 2
+  metadata_fields:
+    - block_number
+    - fiscal_year
+
+# V2.0 evolutions from the second config document, canonicalized.
+# Improvement: if repeated metric lists remain stable, add aliases to avoid duplication.
+evolutions:
+  - evolution_id: evo_pst
+    display_name: "PST"
+    sheet_name: "PST"
+    metric_ids:
+      - m_push_ups
+      - m_sit_ups
+      - m_pull_ups
+      - m_run_time_seconds
+      - m_swim_time_seconds
+
+  - evolution_id: evo_breakout_1
+    display_name: "Breakout #1"
+    sheet_name: "Breakout 1"
+    metric_ids:
+      - m_kims_game_communication
+      - m_opening_arguments
+      - m_scenarios
+
+  - evolution_id: evo_log_pt_1
+    display_name: "Log PT #1"
+    sheet_name: "Log PT 1"
+    metric_ids:
+      - m_log_pt_physicality
+      - m_log_pt_teamability
+
+  - evolution_id: evo_ibs_pt_land_portage
+    display_name: "IBS PT / Land Portage"
+    sheet_name: "IBS PT Land Portage"
+    metric_ids:
+      - m_ibs_low_carry_physicality
+      - m_ibs_low_carry_teamability
+      - m_ibs_low_carry_communication
+      - m_ibs_land_portage_physicality
+      - m_ibs_land_portage_teamability
+      - m_ibs_land_portage_communication
+
+  - evolution_id: evo_pool_1
+    display_name: "Pool #1"
+    sheet_name: "Pool 1"
+    metric_ids:
+      - m_underwater_knot_tying
+      - m_gear_ditch_and_don
+      - m_knot_tying_comments
+      - m_ditch_and_don_comments
+      - m_25m_uw_swim
+
+  - evolution_id: evo_ruck_run
+    display_name: "4.5 Mile Ruck Run"
+    sheet_name: "4.5 Mile Ruck Run"
+    metric_ids:
+      - m_4_5_mile_run_time_seconds
+
+  - evolution_id: evo_breakout_2
+    display_name: "Breakout #2"
+    sheet_name: "Breakout 2"
+    metric_ids:
+      - m_final_team_event_physicality
+      - m_final_team_event_teamability
+      - m_final_team_event_communication
+
+  - evolution_id: evo_pool_2
+    display_name: "Pool #2"
+    sheet_name: "Pool 2"
+    metric_ids:
+      - m_boat_crew_tread
+      - m_weighted_tread
+
+  - evolution_id: evo_ibs_pt
+    display_name: "IBS PT / Land Portage / Land Portage Races"
+    sheet_name: "IBS PT Land Portage Races"
+    metric_ids:
+      - m_ibs_low_carry_physicality
+      - m_ibs_low_carry_teamability
+      - m_ibs_low_carry_communication
+      - m_ibs_land_portage_physicality
+      - m_ibs_land_portage_teamability
+      - m_ibs_land_portage_communication
+
+  - evolution_id: evo_log_pt_2
+    display_name: "Log PT #2"
+    sheet_name: "Log PT 2"
+    metric_ids:
+      - m_log_pt_physicality
+      - m_log_pt_teamability
+
+  - evolution_id: evo_down_man_drills
+    display_name: "Down Man Drills"
+    sheet_name: "Down Man Drills"
+    metric_ids:
+      - m_down_man

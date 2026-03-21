@@ -1,0 +1,58 @@
+version: 2.1
+registry_name: usna_screener_evos
+spreadsheet_keyword: record
+
+# Canonical file contract for template generation.
+files:
+  metrics: config/metrics.yaml
+  evolutions: config/evolutions.yaml
+  roster: config/roster.csv
+  master: cofig/master-config.yaml
+
+# These are the candidate columns pinned on the left of every evolution sheet.
+roster_contract:
+  required_fields:
+    - uid
+    - first
+    - last
+
+sheet_contract:
+  locked_left_columns:
+    - uid
+    - first
+    - last
+  freeze_panes: D2
+  header_row: 1
+  first_candidate_row: 2
+  required_metadata_fields:
+    - block_number
+    - fiscal_year
+
+# Controlled vocabulary used by metric.domain_ref.
+domains:
+  nomination: [positive, negative]
+  top5_flag: [0, 1]
+  recommendation: ["Not Recommended", "Recommended", "Strongly Recommended"]
+  pass_fail: [Pass, Fail]
+  subjective: [0, 1, 2, 3, 4]
+
+validation:
+  strict_reference_checks: true
+  required_metric_fields:
+    - metric_id
+    - display_name
+    - type
+    - input_kind
+  allowed_metric_types:
+    - integer
+    - numeric
+    - timed
+    - categorical
+    - text
+  allowed_input_kinds:
+    - measured
+    - evaluator
+    - assessment
+    - panel_output
+    - derived
+    - entry_helper

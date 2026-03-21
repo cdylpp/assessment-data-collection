@@ -1,0 +1,28 @@
+version: 1.0
+registry_name: master
+spreadsheet_keyword: master
+
+columns:
+  - name: ID
+    type: uid
+  - name: Last Name
+  - name: First Name
+  - name: Block
+    type: integer
+  - name: Source
+    type: str
+  - name: Kims Game Communication
+  - name: 35M Underwater Swim
+  - name: Push Ups
+  - name: Sit Ups
+  - name: Pull Ups
+  - name: Run Total (seconds)
+  - name: Swim Total (seconds)
+  - name: Weighted Tread
+  - name: Underwater Knot Tying
+  - name: Gear Ditch and Don
+  - name: 4.5 Mile Ruck Run Total (seconds)
+  - name: IBS Low Carry - Physicality Total
+  - name: IBS Low Carry - Teamability Total
+  - name: IBS Low Carry - Communication Total
+  - name: Log PT - Physicality Total

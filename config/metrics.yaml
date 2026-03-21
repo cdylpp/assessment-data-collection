@@ -1,0 +1,357 @@
+version: 2.1
+registry_name: usna_screener_evos
+
+# Canonical metric registry (union of both legacy config documents).
+# Improvement: after field testing, add explicit min/max constraints per metric.
+metrics:
+  # --- Core V2.0 fitness / event metrics ---
+  - metric_id: m_push_ups
+    display_name: Push Ups
+    type: integer
+    unit: reps
+    min_pass: 50 # Minimum score to pass; Use for cell formatting; If Fail highlight red.
+    input_kind: measured
+
+  - metric_id: m_sit_ups
+    display_name: Sit Ups
+    type: integer
+    min_pass: 50
+    unit: reps
+    input_kind: measured
+
+  - metric_id: m_pull_ups
+    display_name: Pull Ups
+    type: integer
+    unit: reps
+    min_pass: 10
+    input_kind: measured
+
+  - metric_id: m_run_time_seconds
+    display_name: Run - Time (mm:ss.0)
+    type: timed
+    unit: seconds
+    input_kind: measured
+    min_pass: 10:30
+    excel_input:
+      entry_style: mm_ss
+
+  - metric_id: m_swim_time_seconds
+    display_name: Swim - Time (mm:ss.0)
+    type: timed
+    unit: seconds
+    input_kind: measured
+    min_pass: 12:30
+    excel_input:
+      entry_style: mm_ss
+
+  - metric_id: m_25m_uw_swim
+    display_name: 25M Underwater Swim
+    type: categorical
+    domain_ref: pass_fail
+    input_kind: evaluator
+
+  - metric_id: m_weighted_tread
+    display_name: Weighted Tread
+    type: categorical
+    domain_ref: pass_fail
+    input_kind: evaluator
+
+  - metric_id: m_underwater_knot_tying
+    display_name: Underwater Knot Tying
+    type: categorical
+    domain_ref: pass_fail
+    input_kind: evaluator
+
+  - metric_id: m_gear_ditch_and_don
+    display_name: Gear Ditch and Don
+    type: categorical
+    domain_ref: pass_fail
+    input_kind: evaluator
+
+  - metric_id: m_boat_crew_tread
+    display_name: Boat Crew Tread
+    type: categorical
+    domain_ref: pass_fail
+    input_kind: evaluator
+
+  - metric_id: m_4_5_mile_run_time_seconds
+    display_name: 4.5 Mile Ruck Run - Time (mm:ss.0)
+    type: timed
+    unit: seconds
+    input_kind: measured
+    excel_input:
+      entry_style: mm_ss
+
+  # --- Team / rubric scoring ---
+  - metric_id: m_ibs_low_carry_physicality
+    display_name: IBS Low Carry - Physicality
+    type: integer
+    unit: score
+    domain_ref: subjective
+    input_kind: evaluator
+    aggregator: average # function to apply when multiple metric_id for a single row.
+    num_occurrence: 3 # Number of times the column appears in a single row. Labelled [Metric Name] 1 ,..., [Metric Name] [N].
+
+  - metric_id: m_ibs_low_carry_teamability
+    display_name: IBS Low Carry - Teamability
+    type: integer
+    unit: score
+    domain_ref: subjective
+    input_kind: evaluator
+    aggregator: average
+
+  - metric_id: m_ibs_low_carry_communication
+    display_name: IBS Low Carry - Communication
+    type: integer
+    unit: score
+    domain_ref: subjective
+    input_kind: evaluator
+    aggregator: average
+
+  - metric_id: m_log_pt_physicality
+    display_name: Log PT - Physicality
+    type: integer
+    unit: score
+    domain_ref: subjective
+    input_kind: evaluator
+    aggregator: average
+
+  - metric_id: m_log_pt_teamability
+    display_name: Log PT - Teamability
+    type: integer
+    unit: score
+    domain_ref: subjective
+    input_kind: evaluator
+    aggregator: average
+
+  - metric_id: m_ibs_land_portage_physicality
+    display_name: IBS Land Portage - Physicality
+    type: integer
+    unit: score
+    domain_ref: subjective
+    input_kind: evaluator
+    aggregator: average
+
+  - metric_id: m_ibs_land_portage_teamability
+    display_name: IBS Land Portage - Teamability
+    type: integer
+    unit: score
+    domain_ref: subjective
+    input_kind: evaluator
+    aggregator: average
+
+  - metric_id: m_ibs_land_portage_communication
+    display_name: IBS Land Portage - Communication
+    type: integer
+    unit: score
+    domain_ref: subjective
+    input_kind: evaluator
+    aggregator: average
+
+  - metric_id: m_down_man
+    display_name: Down Man - Physicality
+    type: integer
+    unit: score
+    domain_ref: subjective
+    input_kind: evaluator
+    aggregator: average
+
+  # --- Legacy metrics retained for backward compatibility ---
+  # Improvement: mark a formal deprecation date per legacy metric in future versions.
+  - metric_id: m_kims_game_communication
+    display_name: KIMs Game - Communication
+    type: numeric
+    unit: score
+    domain_ref: subjective
+    input_kind: evaluator
+
+  - metric_id: m_opening_arguments
+    display_name: Opening Arguments
+    type: numeric
+    unit: score
+    domain_ref: subjective
+    input_kind: evaluator
+
+  - metric_id: m_scenarios
+    display_name: Scenarios
+    type: numeric
+    unit: score
+    domain_ref: subjective
+    input_kind: evaluator
+
+  - metric_id: m_5mile_run_time_seconds
+    display_name: 5 Mile Run - Time (mm:ss.0)
+    type: timed
+    unit: seconds
+    input_kind: measured
+    excel_input:
+      entry_style: mm_ss
+      minutes_field: m_5mile_run_minutes
+      seconds_field: m_5mile_run_seconds
+
+  - metric_id: m_5mile_run_minutes
+    display_name: 5 Mile Run - Minutes (entry)
+    type: integer
+    unit: minutes
+    input_kind: entry_helper
+    hidden_in_export: true
+
+  - metric_id: m_5mile_run_seconds
+    display_name: 5 Mile Run - Seconds (entry)
+    type: integer
+    unit: seconds
+    input_kind: entry_helper
+    hidden_in_export: true
+
+  - metric_id: m_obstacle_course_time_seconds
+    display_name: Obstacle Course - Time (mm:ss.0)
+    type: timed
+    unit: seconds
+    input_kind: measured
+    excel_input:
+      entry_style: mm_ss
+
+  - metric_id: m_obstacle_course_ratio_complete
+    display_name: Obstacle Course - Ratio Complete
+    type: numeric
+    unit: score
+    input_kind: measured
+
+  - metric_id: m_circuit_pt_time_seconds
+    display_name: Circuit PT - Time (mm:ss.0)
+    type: timed
+    unit: seconds
+    input_kind: measured
+    excel_input:
+      entry_style: mm_ss
+
+  - metric_id: m_6mile_ruck_run_time_seconds
+    display_name: 6 Mile Ruck Run - Time (mm:ss.0)
+    type: timed
+    unit: seconds
+    input_kind: measured
+    excel_input:
+      entry_style: mm_ss
+
+  - metric_id: m_1nm_swim_time_seconds
+    display_name: 1 NM Swim - Time (mm:ss.0)
+    type: timed
+    unit: seconds
+    input_kind: measured
+    excel_input:
+      entry_style: mm_ss
+
+  - metric_id: m_final_team_event_physicality
+    display_name: Final Team Event - Physicality
+    type: integer
+    unit: score
+    domain_ref: subjective
+    input_kind: evaluator
+    aggregator: average
+
+  - metric_id: m_final_team_event_teamability
+    display_name: Final Team Event - Teamability
+    type: integer
+    unit: score
+    domain_ref: subjective
+    input_kind: evaluator
+    aggregator: average
+
+  - metric_id: m_final_team_event_communication
+    display_name: Final Team Event - Communication
+    type: integer
+    unit: score
+    domain_ref: subjective
+    input_kind: evaluator
+    aggregator: average
+
+  - metric_id: m_iq_score
+    display_name: IQ Score
+    type: numeric
+    unit: score
+    input_kind: assessment
+
+  - metric_id: m_psych_communication
+    display_name: Psych - Communication
+    type: integer
+    unit: score
+    domain_ref: subjective
+    input_kind: assessment
+
+  - metric_id: m_psych_leadership
+    display_name: Psych - Leadership
+    type: integer
+    unit: score
+    domain_ref: subjective
+    input_kind: assessment
+
+  - metric_id: m_psych_integrity
+    display_name: Psych - Integrity
+    type: integer
+    unit: score
+    domain_ref: subjective
+    input_kind: assessment
+
+  - metric_id: m_psych_recommendation
+    display_name: Psych - Recommendation
+    type: categorical
+    domain_ref: recommendation
+    input_kind: assessment
+
+  - metric_id: m_interview_score
+    display_name: Interview Score
+    type: numeric
+    unit: score
+    input_kind: assessment
+    aggregator: average
+    num_occurrence: 3
+
+  - metric_id: m_interview_panel_remarks
+    display_name: Interview Panel Chairman Remarks
+    type: text
+    unit: text
+    input_kind: assessment
+
+  - metric_id: m_top5_flag
+    display_name: Top 5
+    type: categorical
+    domain_ref: top5_flag
+    input_kind: panel_output
+
+  - metric_id: m_positive_nomination
+    display_name: Positive Nomination
+    type: categorical
+    domain_ref: nomination
+    input_kind: panel_output
+
+  - metric_id: m_negative_nomination
+    display_name: Negative Nomination
+    type: categorical
+    domain_ref: nomination
+    input_kind: panel_output
+
+  - metric_id: m_composite_score
+    display_name: Composite Score
+    type: numeric
+    unit: score
+    input_kind: derived
+
+  - metric_id: m_knot_tying_comments
+    display_name: Knot Tying - Comments
+    type: text
+    unit: text
+    input_kind: evaluator
+
+  - metric_id: m_ditch_and_don_comments
+    display_name: Ditch and Don - Comments
+    type: text
+    unit: text
+    input_kind: evaluator
+
+  - metric_id: m_obstacle_course_comments
+    display_name: Obstacle Course - Comments
+    type: text
+    unit: text
+    input_kind: evaluator
+  
+  

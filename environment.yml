@@ -1,0 +1,9 @@
+name: soac-dc
+channels:
+  - conda-forge
+dependencies:
+  - python=3.8.5
+  - pyyaml
+  - jsonschema
+  - openpyxl
+  - pyqt=5.9.2
