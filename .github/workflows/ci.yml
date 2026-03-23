@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  phase2-checkpoints:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Conda environment
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          activate-environment: soac-dc
+          auto-activate-base: false
+          environment-file: environment.yml
+          use-mamba: true
+
+      - name: Run Phase 2 checkpoint suite
+        shell: bash -el {0}
+        run: make phase2-test
+

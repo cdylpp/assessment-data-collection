@@ -2,6 +2,7 @@
 param(
     [ValidateSet(
         "help",
+        "check-clean",
         "phase1-test",
         "phase1-run",
         "phase1-build",
@@ -49,7 +50,7 @@ function Invoke-Phase2Test {
     $previous = $env:QT_QPA_PLATFORM
     $env:QT_QPA_PLATFORM = "offscreen"
     try {
-        Invoke-Step @($Python, "-m", "unittest", "discover", "-s", "tests", "-v")
+        Invoke-Step @($Python, "scripts/run_phase2_tests.py")
     }
     finally {
         if ($null -eq $previous) {
@@ -97,6 +98,7 @@ switch ($Task) {
     "help" {
         @(
             "Available tasks:",
+            "  check-clean   Fail if the Git working tree is not clean.",
             "  phase1-test   Run the Phase 1 backend smoke tests.",
             "  phase1-run    Run the CLI workbook generator and write a smoke workbook.",
             "  phase1-build  Byte-compile project sources for an early build checkpoint.",
@@ -108,6 +110,13 @@ switch ($Task) {
             "  build         Alias for phase2-build.",
             "  clean         Remove generated smoke workbooks, caches, and build artifacts."
         ) | ForEach-Object { Write-Host $_ }
+    }
+    "check-clean" {
+        $status = git status --porcelain
+        if ($status) {
+            git status --short
+            throw "Working tree is not clean."
+        }
     }
     "phase1-test" {
         Invoke-Step @($Python, "-m", "unittest", "discover", "-s", "tests", "-p", "test_template_generator.py", "-v")

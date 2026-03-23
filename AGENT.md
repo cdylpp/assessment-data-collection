@@ -4,6 +4,9 @@
 
 You are software engineering developing a light-weight excel workbook generator based on configuration files. The entire method should take two inputs: (1) a roster of names and date of births, (2) a configuration file that specifies evolutions and metrics collected for each evolution (we often use evo for shorthand).
 
+After completing the workbook generator, we are adding a simple GUI application for the end user to use the application without needing to run any command line scripts. 
+We are use a simple MVC architecture with PyQt. 
+
 The program outputs a data collection ready excel notebook pre-populated with a one to one mapping for evolutions and sheets. Each evo (sheet) displays candidate names locked on the left side (y-axis) and metrics on the x-axis with predefined data types (and dropdowns is specified in configs).
 
 The program should also contain an "inverse" operation that takes an excel workbook and converts to a master excel file based on the data contract for the master excel file.

@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 
-PYTHON ?= python3
+PYTHON ?= python
 APP_NAME ?= excel-template-generator
 GUI_ENTRY := src/gui_app.py
 CLI_ENTRY := src/excel-template.py
@@ -12,11 +12,12 @@ PYINSTALLER_CONFIG_DIR := build/pyinstaller-config
 PYINSTALLER_WORKPATH := build/pyinstaller-work
 PYINSTALLER_DISTPATH := dist
 
-.PHONY: help phase1-test phase1-run phase1-build phase2-test phase2-run phase2-build test run build clean
+.PHONY: help check-clean phase1-test phase1-run phase1-build phase2-test phase2-run phase2-build test run build clean
 
 help:
 	@printf "%s\n" \
 	"Available targets:" \
+	"  check-clean   Fail if the Git working tree is not clean." \
 	"  phase1-test   Run the Phase 1 backend smoke tests." \
 	"  phase1-run    Run the CLI workbook generator and write a smoke workbook." \
 	"  phase1-build  Byte-compile project sources for an early build checkpoint." \
@@ -28,6 +29,13 @@ help:
 	"  build         Alias for phase2-build." \
 	"  clean         Remove generated smoke workbooks, caches, and build artifacts."
 
+check-clean:
+	@if [ -n "$$(git status --porcelain)" ]; then \
+		echo "Working tree is not clean."; \
+		git status --short; \
+		exit 1; \
+	fi
+
 phase1-test:
 	$(PYTHON) -m unittest discover -s tests -p 'test_template_generator.py' -v
 
@@ -38,7 +46,7 @@ phase1-build:
 	$(PYTHON) -m compileall src tests
 
 phase2-test:
-	QT_QPA_PLATFORM=offscreen $(PYTHON) -m unittest discover -s tests -v
+	$(PYTHON) scripts/run_phase2_tests.py
 
 phase2-run:
 	$(PYTHON) $(GUI_ENTRY) --config $(CONFIG_PATH)
