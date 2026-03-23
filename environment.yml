@@ -1,4 +1,4 @@
-name: soac-dc
+name: assessment-data-collection
 channels:
   - conda-forge
 dependencies:
