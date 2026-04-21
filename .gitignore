@@ -17,6 +17,3 @@ env/
 master.xlsx
 workbooks/*.xlsx
 !workbooks/.gitkeep
-
-config/
-*.csv
