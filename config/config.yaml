@@ -7,7 +7,7 @@ files:
   metrics: config/metrics.yaml
   evolutions: config/evolutions.yaml
   roster: config/roster.csv
-  master: cofig/master-config.yaml
+  master: config/master-config.yaml
 
 # These are the candidate columns pinned on the left of every evolution sheet.
 roster_contract:
@@ -21,9 +21,10 @@ sheet_contract:
     - uid
     - first
     - last
-  freeze_panes: D2
+  freeze_panes: D3
   header_row: 1
-  first_candidate_row: 2
+  metric_id_row: 2
+  first_candidate_row: 3
   required_metadata_fields:
     - block_number
     - fiscal_year
@@ -37,6 +38,27 @@ domains:
   subjective: [0, 1, 2, 3, 4]
 
 validation:
+  supported_transform_ops:
+    - identity
+    - aggregate_occurrences
+    - combine_metrics
+  supported_aggregate_functions:
+    - average
+    - sum
+    - max
+    - min
+    - count
+  supported_duplicate_resolution_modes:
+    - error_on_conflict
+    - first_non_null
+    - last_non_null
+    - aggregate
+    - concat_distinct
+  supported_null_outputs:
+    - null
+    - blank
+    - zero
+    - literal
   strict_reference_checks: true
   required_metric_fields:
     - metric_id

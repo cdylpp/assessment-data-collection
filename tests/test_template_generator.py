@@ -49,12 +49,17 @@ class TemplateGeneratorSmokeTest(unittest.TestCase):
             self.assertEqual(generated_path, output_path.resolve())
             self.assertTrue(generated_path.exists())
 
-            workbook = load_workbook(generated_path, read_only=True)
+            workbook = load_workbook(generated_path)
             try:
                 self.assertIn("META", workbook.sheetnames)
                 self.assertIn("ROSTER", workbook.sheetnames)
                 self.assertIn("LOOKUPS", workbook.sheetnames)
                 self.assertIn("PST", workbook.sheetnames)
+                pst = workbook["PST"]
+                self.assertTrue(pst.row_dimensions[2].hidden)
+                self.assertEqual(pst["A2"].value, "uid")
+                self.assertEqual(pst["D2"].value, "m_push_ups")
+                self.assertEqual(pst["A3"].value, workbook["ROSTER"]["A2"].value)
             finally:
                 workbook.close()
 

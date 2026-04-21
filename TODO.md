@@ -1,26 +1,11 @@
 # TODO
 
-## Step 1. Build the node workbooks
+## Master File Aggregator
 
-Let N be the number of nodes in the data collection array.
-Let E be the set of evolutions and |E| = k.
-Let M_e be the set of metrics parameterized by some evolution e in E.
-Let C be the set of candidates.
+### Assertions that must be true before starting aggregator
 
-- Create a workbook.
-- Add k sheets for each e in E.
-- For each e in E, add M_e as columns in the sheet labeled e.
-- On the horizontal axis, add a row for each c in C with first, last, and uid. 
-- Each evolution has the following metadata that need to be contained in the sheet as well: block number, fiscal year.
-- Each metric has a data type.
-  - Data type: `time` then it must be `mm:ss` format. The cell should through an error if it is an invalid time.
-  - Data type: 
-
-## Step 2. Aggregate node workbooks into single workbook
-
-## Step 3. Map single workbook to master workbook
-
-## (Optional): Define `yaml` contract for master workbook
+- [ ] META must contain enough fields to validate workbook compatibility.
+- [ ] We need at least one red test proving the desired repeated-metric rollup behavior.
 
 ## GUI: First iteration requirements for template configuration and generation
 

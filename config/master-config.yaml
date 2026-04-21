@@ -1,28 +1,327 @@
-version: 1.0
+version: 2.0
 registry_name: master
 spreadsheet_keyword: master
 
+# Master mapping contract for the aggregator.
+# The aggregator should normalize workbook input first, then apply these column mappings.
+#
+# Normalized input row shape:
+#   uid, first, last, block_number, fiscal_year, source_workbook,
+#   evolution_id, metric_id, occurrence_index, raw_value, normalized_value
+#
+# Conceptually this defines a transformation T : M -> C where:
+#   M = one or more normalized metric streams selected by source.metric_ids
+#   C = one master workbook output column
+
+defaults:
+  # Global null handling applied to every transform unless a column overrides it.
+  null_rule:
+    trim_strings: true
+    blank_inputs_are_null: true
+    null_literals:
+      - "N/A"
+      - "NA"
+      - "NULL"
+      - "null"
+    on_all_inputs_null: null
+    on_partial_null_inputs: keep_non_null
+
+  # Default policy for seeing more than one row for the same metric stream.
+  # The aggregator should group by:
+  #   uid + block_number + metric_id + occurrence_index
+  # before applying this rule unless a column overrides it.
+  duplicate_metric_rule:
+    mode: error_on_conflict
+
+  # Formatting defaults for emitted master workbook columns.
+  output:
+    excel_number_format: General
+    alignment: general
+
 columns:
-  - name: ID
+  - column_id: candidate_uid
+    header: ID
     type: uid
-  - name: Last Name
-  - name: First Name
-  - name: Block
-    type: integer
-  - name: Source
+    source:
+      kind: roster_field
+      field: uid
+    transform:
+      op: identity
+    null_rule:
+      on_all_inputs_null: literal
+      literal: "MISSING_UID"
+    output:
+      excel_number_format: "@"
+      alignment: left
+
+  - column_id: last_name
+    header: Last Name
     type: str
-  - name: Kims Game Communication
-  - name: 35M Underwater Swim
-  - name: Push Ups
-  - name: Sit Ups
-  - name: Pull Ups
-  - name: Run Total (seconds)
-  - name: Swim Total (seconds)
-  - name: Weighted Tread
-  - name: Underwater Knot Tying
-  - name: Gear Ditch and Don
-  - name: 4.5 Mile Ruck Run Total (seconds)
-  - name: IBS Low Carry - Physicality Total
-  - name: IBS Low Carry - Teamability Total
-  - name: IBS Low Carry - Communication Total
-  - name: Log PT - Physicality Total
+    source:
+      kind: roster_field
+      field: last
+    transform:
+      op: identity
+    output:
+      excel_number_format: "@"
+      alignment: left
+
+  - column_id: first_name
+    header: First Name
+    type: str
+    source:
+      kind: roster_field
+      field: first
+    transform:
+      op: identity
+    output:
+      excel_number_format: "@"
+      alignment: left
+
+  - column_id: block_number
+    header: Block
+    type: integer
+    source:
+      kind: meta_field
+      field: block_number
+    transform:
+      op: identity
+    output:
+      excel_number_format: "0"
+      alignment: center
+
+  - column_id: source_workbook
+    header: Source
+    type: str
+    source:
+      kind: ingestion_metadata
+      field: source_workbook
+    transform:
+      op: identity
+      duplicate_metric_rule:
+        mode: concat_distinct
+        separator: "; "
+    output:
+      excel_number_format: "@"
+      alignment: left
+
+  - column_id: kims_game_communication
+    header: Kims Game Communication
+    type: numeric
+    source:
+      kind: metric
+      metric_ids: [m_kims_game_communication]
+    transform:
+      op: identity
+    output:
+      excel_number_format: "0.00"
+      alignment: center
+
+  - column_id: underwater_swim
+    header: 35M Underwater Swim
+    type: categorical
+    source:
+      kind: metric
+      metric_ids: [m_25m_uw_swim]
+    transform:
+      op: identity
+    output:
+      excel_number_format: "@"
+      alignment: center
+
+  - column_id: push_ups
+    header: Push Ups
+    type: integer
+    source:
+      kind: metric
+      metric_ids: [m_push_ups]
+    transform:
+      op: identity
+    output:
+      excel_number_format: "0"
+      alignment: center
+
+  - column_id: sit_ups
+    header: Sit Ups
+    type: integer
+    source:
+      kind: metric
+      metric_ids: [m_sit_ups]
+    transform:
+      op: identity
+    output:
+      excel_number_format: "0"
+      alignment: center
+
+  - column_id: pull_ups
+    header: Pull Ups
+    type: integer
+    source:
+      kind: metric
+      metric_ids: [m_pull_ups]
+    transform:
+      op: identity
+    output:
+      excel_number_format: "0"
+      alignment: center
+
+  - column_id: run_total_seconds
+    header: Run Total (seconds)
+    type: integer
+    source:
+      kind: metric
+      metric_ids: [m_run_time_seconds]
+    transform:
+      op: identity
+    null_rule:
+      on_all_inputs_null: blank
+    output:
+      excel_number_format: "0"
+      alignment: center
+      style_tags: [seconds]
+
+  - column_id: swim_total_seconds
+    header: Swim Total (seconds)
+    type: integer
+    source:
+      kind: metric
+      metric_ids: [m_swim_time_seconds]
+    transform:
+      op: identity
+    null_rule:
+      on_all_inputs_null: blank
+    output:
+      excel_number_format: "0"
+      alignment: center
+      style_tags: [seconds]
+
+  - column_id: weighted_tread
+    header: Weighted Tread
+    type: categorical
+    source:
+      kind: metric
+      metric_ids: [m_weighted_tread]
+    transform:
+      op: identity
+    output:
+      excel_number_format: "@"
+      alignment: center
+
+  - column_id: underwater_knot_tying
+    header: Underwater Knot Tying
+    type: categorical
+    source:
+      kind: metric
+      metric_ids: [m_underwater_knot_tying]
+    transform:
+      op: identity
+    output:
+      excel_number_format: "@"
+      alignment: center
+
+  - column_id: gear_ditch_and_don
+    header: Gear Ditch and Don
+    type: categorical
+    source:
+      kind: metric
+      metric_ids: [m_gear_ditch_and_don]
+    transform:
+      op: identity
+    output:
+      excel_number_format: "@"
+      alignment: center
+
+  - column_id: ruck_run_total_seconds
+    header: 4.5 Mile Ruck Run Total (seconds)
+    type: integer
+    source:
+      kind: metric
+      metric_ids: [m_4_5_mile_run_time_seconds]
+    transform:
+      op: identity
+    null_rule:
+      on_all_inputs_null: blank
+    output:
+      excel_number_format: "0"
+      alignment: center
+      style_tags: [seconds]
+
+  - column_id: ibs_low_carry_physicality_total
+    header: IBS Low Carry - Physicality Total
+    type: numeric
+    source:
+      kind: metric
+      metric_ids: [m_ibs_low_carry_physicality]
+    transform:
+      op: aggregate_occurrences
+      occurrence_scope: all
+      duplicate_metric_rule:
+        mode: aggregate
+        aggregate_function: average
+    null_rule:
+      on_all_inputs_null: blank
+      on_partial_null_inputs: keep_non_null
+    output:
+      excel_number_format: "0.00"
+      alignment: center
+      style_tags: [score]
+
+  - column_id: ibs_low_carry_teamability_total
+    header: IBS Low Carry - Teamability Total
+    type: numeric
+    source:
+      kind: metric
+      metric_ids: [m_ibs_low_carry_teamability]
+    transform:
+      op: aggregate_occurrences
+      occurrence_scope: all
+      duplicate_metric_rule:
+        mode: aggregate
+        aggregate_function: average
+    null_rule:
+      on_all_inputs_null: blank
+      on_partial_null_inputs: keep_non_null
+    output:
+      excel_number_format: "0.00"
+      alignment: center
+      style_tags: [score]
+
+  - column_id: ibs_low_carry_communication_total
+    header: IBS Low Carry - Communication Total
+    type: numeric
+    source:
+      kind: metric
+      metric_ids: [m_ibs_low_carry_communication]
+    transform:
+      op: aggregate_occurrences
+      occurrence_scope: all
+      duplicate_metric_rule:
+        mode: aggregate
+        aggregate_function: average
+    null_rule:
+      on_all_inputs_null: blank
+      on_partial_null_inputs: keep_non_null
+    output:
+      excel_number_format: "0.00"
+      alignment: center
+      style_tags: [score]
+
+  - column_id: log_pt_physicality_total
+    header: Log PT - Physicality Total
+    type: numeric
+    source:
+      kind: metric
+      metric_ids: [m_log_pt_physicality]
+    transform:
+      op: aggregate_occurrences
+      occurrence_scope: all
+      duplicate_metric_rule:
+        mode: aggregate
+        aggregate_function: average
+    null_rule:
+      on_all_inputs_null: blank
+      on_partial_null_inputs: keep_non_null
+    output:
+      excel_number_format: "0.00"
+      alignment: center
+      style_tags: [score]

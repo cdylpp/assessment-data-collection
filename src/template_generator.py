@@ -615,8 +615,11 @@ def create_evolution_sheets(
         if field not in {"uid", "first", "last"}
     ]
     header_row = int(sheet_contract.get("header_row", 1))
-    first_candidate_row = int(sheet_contract.get("first_candidate_row", 2))
-    freeze_panes = sheet_contract.get("freeze_panes", "D2")
+    metric_id_row = int(sheet_contract.get("metric_id_row", header_row + 1))
+    first_candidate_row = int(
+        sheet_contract.get("first_candidate_row", max(header_row, metric_id_row) + 1)
+    )
+    freeze_panes = sheet_contract.get("freeze_panes", "D3")
 
     edit_row_count = max(len(roster_rows), entry_rows)
     edit_row_end = first_candidate_row + edit_row_count - 1
@@ -632,6 +635,11 @@ def create_evolution_sheets(
             for metric_id in metric_ids
         )
         style_header_row(ws, headers, header_row)
+        machine_headers = list(roster_fields) + [str(metric_id) for metric_id in metric_ids]
+        for col_idx, value in enumerate(machine_headers, start=1):
+            cell = ws.cell(row=metric_id_row, column=col_idx, value=value)
+            cell.protection = Protection(locked=True)
+        ws.row_dimensions[metric_id_row].hidden = True
         ws.freeze_panes = freeze_panes
 
         for row_idx, roster in enumerate(roster_rows, start=first_candidate_row):
@@ -734,4 +742,3 @@ def main(argv: Optional[List[str]] = None) -> int:
     output_path = generate_template_workbook(request_from_namespace(args))
     print("Workbook generated: {0}".format(output_path))
     return 0
-

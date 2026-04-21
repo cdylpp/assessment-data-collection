@@ -94,8 +94,6 @@ Goal: Build the script that compiles YAML into a fully configured node workbook 
 - Put all dropdown sources in LOOKUPS with named ranges (domain_pass_fail, etc.).
 - Embed a config_hash so ingestion can verify the workbook matches the expected config.
 
-⸻
-
 ## Phase 3 — Per-block workbook instantiation (Roster injection)
 
 Goal: Take the generated template and create the actual field workbook(s) for a specific block.

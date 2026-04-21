@@ -16,9 +16,10 @@ sheet_defaults:
       header: UID
       source_field: uid
       locked: true
-  freeze_panes: D2
+  freeze_panes: D3
   header_row: 1
-  first_candidate_row: 2
+  metric_id_row: 2
+  first_candidate_row: 3
   metadata_fields:
     - block_number
     - fiscal_year
