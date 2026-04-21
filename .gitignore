@@ -18,3 +18,5 @@ master.xlsx
 workbooks/*.xlsx
 !workbooks/.gitkeep
 
+full-roster.csv
+roster.csv
