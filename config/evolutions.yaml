@@ -26,6 +26,7 @@ sheet_defaults:
 
 # V2.0 evolutions from the second config document, canonicalized.
 # Improvement: if repeated metric lists remain stable, add aliases to avoid duplication.
+# metric_occurrences specifies how many times a metric appears in an evolution.
 evolutions:
   - evolution_id: evo_pst
     display_name: "PST"
@@ -55,6 +56,8 @@ evolutions:
   - evolution_id: evo_ibs_pt_land_portage
     display_name: "IBS PT / Land Portage"
     sheet_name: "IBS PT Land Portage"
+    metric_occurrences:
+      m_ibs_low_carry_physicality: 3
     metric_ids:
       - m_ibs_low_carry_physicality
       - m_ibs_low_carry_teamability
@@ -97,6 +100,8 @@ evolutions:
   - evolution_id: evo_ibs_pt
     display_name: "IBS PT / Land Portage / Land Portage Races"
     sheet_name: "IBS PT Land Portage Races"
+    metric_occurrences:
+      m_ibs_low_carry_physicality: 3
     metric_ids:
       - m_ibs_low_carry_physicality
       - m_ibs_low_carry_teamability

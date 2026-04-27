@@ -89,7 +89,6 @@ metrics:
     unit: score
     domain_ref: subjective
     input_kind: evaluator
-    num_occurrence: 3 # Number of times the column appears in a single row. Labelled [Metric Name] 1 ,..., [Metric Name] [N].
 
   - metric_id: m_ibs_low_carry_teamability
     display_name: IBS Low Carry - Teamability
@@ -291,7 +290,6 @@ metrics:
     type: numeric
     unit: score
     input_kind: assessment
-    num_occurrence: 3
 
   - metric_id: m_interview_panel_remarks
     display_name: Interview Panel Chairman Remarks
