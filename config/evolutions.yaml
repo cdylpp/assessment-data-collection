@@ -49,6 +49,9 @@ evolutions:
   - evolution_id: evo_log_pt_1
     display_name: "Log PT #1"
     sheet_name: "Log PT 1"
+    metric_occurrences:
+      m_log_pt_physicality: 6
+      m_log_pt_teamability: 6
     metric_ids:
       - m_log_pt_physicality
       - m_log_pt_teamability
@@ -57,7 +60,12 @@ evolutions:
     display_name: "IBS PT / Land Portage"
     sheet_name: "IBS PT Land Portage"
     metric_occurrences:
-      m_ibs_low_carry_physicality: 3
+      m_ibs_low_carry_physicality: 6
+      m_ibs_low_carry_teamability: 6
+      m_ibs_low_carry_communication: 6
+      m_ibs_land_portage_physicality: 6
+      m_ibs_land_portage_teamability: 6
+      m_ibs_land_portage_communication: 6
     metric_ids:
       - m_ibs_low_carry_physicality
       - m_ibs_low_carry_teamability
@@ -85,6 +93,10 @@ evolutions:
   - evolution_id: evo_breakout_2
     display_name: "Breakout #2"
     sheet_name: "Breakout 2"
+    metric_occurrences:
+      m_final_team_event_physicality: 6
+      m_final_team_event_teamability: 6
+      m_final_team_event_communication: 6
     metric_ids:
       - m_final_team_event_physicality
       - m_final_team_event_teamability
@@ -101,7 +113,12 @@ evolutions:
     display_name: "IBS PT / Land Portage / Land Portage Races"
     sheet_name: "IBS PT Land Portage Races"
     metric_occurrences:
-      m_ibs_low_carry_physicality: 3
+      m_ibs_low_carry_physicality: 6
+      m_ibs_low_carry_teamability: 6
+      m_ibs_low_carry_communication: 6
+      m_ibs_land_portage_physicality: 6
+      m_ibs_land_portage_teamability: 6
+      m_ibs_land_portage_communication: 6
     metric_ids:
       - m_ibs_low_carry_physicality
       - m_ibs_low_carry_teamability
@@ -113,6 +130,9 @@ evolutions:
   - evolution_id: evo_log_pt_2
     display_name: "Log PT #2"
     sheet_name: "Log PT 2"
+    metric_occurrences:
+      m_log_pt_physicality: 6
+      m_log_pt_teamability: 6
     metric_ids:
       - m_log_pt_physicality
       - m_log_pt_teamability
@@ -120,5 +140,7 @@ evolutions:
   - evolution_id: evo_down_man_drills
     display_name: "Down Man Drills"
     sheet_name: "Down Man Drills"
+    metric_occurrences:
+      m_down_man: 6
     metric_ids:
       - m_down_man
