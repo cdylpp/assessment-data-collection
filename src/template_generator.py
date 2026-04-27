@@ -27,6 +27,13 @@ DEFAULT_CONFIG_PATH = "config/config.yaml"
 
 
 @dataclass(frozen=True)
+class EvolutionMetricColumn:
+    metric_id: str
+    occurrence_index: int
+    occurrence_count: int
+
+
+@dataclass(frozen=True)
 class TemplateGenerationRequest:
     config_path: Path
     roster_path: Optional[Path] = None
@@ -239,6 +246,87 @@ def build_metric_index(metrics_doc: Mapping[str, Any]) -> Dict[str, Dict[str, An
     return index
 
 
+def parse_positive_int(value: Any, label: str) -> int:
+    if isinstance(value, bool):
+        raise ValueError("{0} must be a positive integer".format(label))
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        raise ValueError("{0} must be a positive integer".format(label))
+    if parsed < 1:
+        raise ValueError("{0} must be at least 1".format(label))
+    return parsed
+
+
+def evolution_metric_occurrence_map(evolution: Mapping[str, Any]) -> Dict[str, int]:
+    raw_occurrences = evolution.get("metric_occurrences", {})
+    if raw_occurrences is None:
+        raw_occurrences = {}
+    if not isinstance(raw_occurrences, dict):
+        raise ValueError(
+            "Evolution '{0}' metric_occurrences must be a mapping".format(
+                evolution.get("evolution_id", "unknown")
+            )
+        )
+
+    occurrence_map = {}  # type: Dict[str, int]
+    for metric_id, raw_count in raw_occurrences.items():
+        occurrence_map[str(metric_id)] = parse_positive_int(
+            raw_count,
+            "Evolution '{0}' metric_occurrences.{1}".format(
+                evolution.get("evolution_id", "unknown"), metric_id
+            ),
+        )
+    return occurrence_map
+
+
+def evolution_metric_ids(evolution: Mapping[str, Any]) -> List[str]:
+    raw_metric_ids = evolution.get("metric_ids", [])
+    if not isinstance(raw_metric_ids, list) or not raw_metric_ids:
+        raise ValueError(
+            "Evolution '{0}' has no metric_ids".format(
+                evolution.get("evolution_id", "unknown")
+            )
+        )
+
+    occurrence_map = evolution_metric_occurrence_map(evolution)
+    metric_ids = []  # type: List[str]
+    for raw_metric_id in raw_metric_ids:
+        metric_id = str(raw_metric_id)
+        count = occurrence_map.get(metric_id, 1)
+        metric_ids.extend([metric_id] * count)
+    return metric_ids
+
+
+def evolution_metric_columns(evolution: Mapping[str, Any]) -> List[EvolutionMetricColumn]:
+    metric_ids = evolution_metric_ids(evolution)
+    occurrence_totals = {}  # type: Dict[str, int]
+    for metric_id in metric_ids:
+        occurrence_totals[metric_id] = occurrence_totals.get(metric_id, 0) + 1
+
+    occurrence_indexes = {}  # type: Dict[str, int]
+    columns = []  # type: List[EvolutionMetricColumn]
+    for metric_id in metric_ids:
+        occurrence_indexes[metric_id] = occurrence_indexes.get(metric_id, 0) + 1
+        columns.append(
+            EvolutionMetricColumn(
+                metric_id=metric_id,
+                occurrence_index=occurrence_indexes[metric_id],
+                occurrence_count=occurrence_totals[metric_id],
+            )
+        )
+    return columns
+
+
+def evolution_metric_display_name(
+    metric: Mapping[str, Any], column: EvolutionMetricColumn
+) -> str:
+    display_name = str(metric.get("display_name", column.metric_id))
+    if column.occurrence_count > 1:
+        return "{0} {1}".format(display_name, column.occurrence_index)
+    return display_name
+
+
 def validate_metric_definitions(
     config_doc: Mapping[str, Any], metrics_by_id: Mapping[str, Mapping[str, Any]]
 ) -> None:
@@ -328,12 +416,20 @@ def validate_contract(
             raise ValueError("Duplicate evolution_id: {0}".format(evolution_id))
         seen_evolutions.add(str(evolution_id))
 
-        metric_ids = evolution.get("metric_ids", [])
-        if not metric_ids:
-            raise ValueError(
-                "Evolution '{0}' has no metric_ids".format(evolution_id)
-            )
-        for metric_id in metric_ids:
+        occurrence_map = evolution_metric_occurrence_map(evolution)
+        raw_metric_ids = evolution.get("metric_ids", [])
+        if not isinstance(raw_metric_ids, list) or not raw_metric_ids:
+            raise ValueError("Evolution '{0}' has no metric_ids".format(evolution_id))
+
+        configured_metric_ids = set(str(metric_id) for metric_id in raw_metric_ids)
+        for metric_id in occurrence_map:
+            if metric_id not in configured_metric_ids:
+                raise ValueError(
+                    "Evolution '{0}' defines metric_occurrences for metric_id '{1}' "
+                    "that is not listed in metric_ids".format(evolution_id, metric_id)
+                )
+
+        for metric_id in evolution_metric_ids(evolution):
             if metric_id not in metrics_by_id:
                 raise ValueError(
                     "Evolution '{0}' references unknown metric_id '{1}'".format(
@@ -627,15 +723,19 @@ def create_evolution_sheets(
     for evolution in evolutions_doc["evolutions"]:
         ws = wb.create_sheet(evolution_sheet_name(evolution))
 
-        metric_ids = evolution.get("metric_ids", [])
+        metric_columns = evolution_metric_columns(evolution)
         roster_headers = {"uid": "UID", "first": "First", "last": "Last"}
-        headers = [roster_headers.get(field, field.capitalize()) for field in roster_fields]
+        headers = [
+            roster_headers.get(field, field.capitalize()) for field in roster_fields
+        ]
         headers.extend(
-            metrics_by_id[metric_id].get("display_name", metric_id)
-            for metric_id in metric_ids
+            evolution_metric_display_name(metrics_by_id[column.metric_id], column)
+            for column in metric_columns
         )
         style_header_row(ws, headers, header_row)
-        machine_headers = list(roster_fields) + [str(metric_id) for metric_id in metric_ids]
+        machine_headers = list(roster_fields) + [
+            column.metric_id for column in metric_columns
+        ]
         for col_idx, value in enumerate(machine_headers, start=1):
             cell = ws.cell(row=metric_id_row, column=col_idx, value=value)
             cell.protection = Protection(locked=True)
@@ -661,9 +761,9 @@ def create_evolution_sheets(
         ws.cell(row=3, column=meta_start_col + 1).protection = Protection(locked=True)
 
         metric_start_col = len(roster_fields) + 1
-        for offset, metric_id in enumerate(metric_ids):
+        for offset, column in enumerate(metric_columns):
             col_idx = metric_start_col + offset
-            metric = metrics_by_id[metric_id]
+            metric = metrics_by_id[column.metric_id]
             add_data_validations(
                 ws=ws,
                 metric=metric,
@@ -682,7 +782,9 @@ def create_evolution_sheets(
         for row_idx in range(first_candidate_row, edit_row_end + 1):
             for col_idx in range(1, len(roster_fields) + 1):
                 ws.cell(row=row_idx, column=col_idx).protection = Protection(locked=True)
-            for col_idx in range(metric_start_col, metric_start_col + len(metric_ids)):
+            for col_idx in range(
+                metric_start_col, metric_start_col + len(metric_columns)
+            ):
                 ws.cell(row=row_idx, column=col_idx).protection = Protection(locked=False)
 
 
@@ -727,7 +829,11 @@ def build_workbook(
 def generate_template_workbook(request: TemplateGenerationRequest) -> Path:
     loaded = load_generation_inputs(request)
     workbook = build_workbook(loaded, request)
-    output_path = request.output_path.resolve() if request.output_path else default_output_path(loaded)
+    output_path = (
+        request.output_path.resolve()
+        if request.output_path
+        else default_output_path(loaded)
+    )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     workbook.save(output_path)
     return output_path
@@ -742,3 +848,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     output_path = generate_template_workbook(request_from_namespace(args))
     print("Workbook generated: {0}".format(output_path))
     return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -78,9 +78,15 @@ class MasterGeneratorTest(unittest.TestCase):
             workbook = load_workbook(generated_path, data_only=True)
             try:
                 ws = workbook["MASTER"]
+                loaded = load_generation_inputs(
+                    TemplateGenerationRequest(
+                        config_path=(REPO_ROOT / "config" / "config.yaml").resolve()
+                    )
+                )
+                first_roster_row = loaded.roster_rows[0]
                 self.assertIsNotNone(ws["A2"].value)
-                self.assertEqual(ws["B2"].value, "Adams")
-                self.assertEqual(ws["C2"].value, "Luke")
+                self.assertEqual(ws["B2"].value, first_roster_row["last"])
+                self.assertEqual(ws["C2"].value, first_roster_row["first"])
                 self.assertEqual(ws["D2"].value, "101")
                 self.assertEqual(ws["E2"].value, "node_a.xlsx")
                 self.assertEqual(ws["G2"].value, "Pass")

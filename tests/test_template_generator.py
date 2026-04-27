@@ -60,6 +60,15 @@ class TemplateGeneratorSmokeTest(unittest.TestCase):
                 self.assertEqual(pst["A2"].value, "uid")
                 self.assertEqual(pst["D2"].value, "m_push_ups")
                 self.assertEqual(pst["A3"].value, workbook["ROSTER"]["A2"].value)
+
+                ibs = workbook["IBS PT Land Portage"]
+                self.assertEqual(ibs["D1"].value, "IBS Low Carry - Physicality 1")
+                self.assertEqual(ibs["E1"].value, "IBS Low Carry - Physicality 2")
+                self.assertEqual(ibs["F1"].value, "IBS Low Carry - Physicality 3")
+                self.assertEqual(ibs["D2"].value, "m_ibs_low_carry_physicality")
+                self.assertEqual(ibs["E2"].value, "m_ibs_low_carry_physicality")
+                self.assertEqual(ibs["F2"].value, "m_ibs_low_carry_physicality")
+                self.assertEqual(ibs["G1"].value, "IBS Low Carry - Teamability")
             finally:
                 workbook.close()
 
