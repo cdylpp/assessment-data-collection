@@ -11,6 +11,12 @@ files:
 
 # These are the candidate columns pinned on the left of every evolution sheet.
 roster_contract:
+  uid:
+    mode: generated
+    key_columns:
+      - last
+      - first
+      - dob
   required_fields:
     - uid
     - first

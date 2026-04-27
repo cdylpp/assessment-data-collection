@@ -34,6 +34,13 @@ class EvolutionMetricColumn:
 
 
 @dataclass(frozen=True)
+class RosterUidConfig:
+    mode: str
+    source_column: Optional[str]
+    key_columns: List[str]
+
+
+@dataclass(frozen=True)
 class TemplateGenerationRequest:
     config_path: Path
     roster_path: Optional[Path] = None
@@ -159,14 +166,108 @@ def parse_roster_dob(raw_value: str, roster_path: Path) -> str:
     )
 
 
-def build_candidate_uid(first: str, last: str, dob: str) -> str:
-    normalized = "|".join(part.strip().casefold() for part in (last, first, dob))
+def configured_roster_uid(config_doc: Mapping[str, Any]) -> RosterUidConfig:
+    roster_contract = config_doc.get("roster_contract", {})
+    if roster_contract is None:
+        roster_contract = {}
+    if not isinstance(roster_contract, dict):
+        raise ValueError("config.yaml 'roster_contract' must be a mapping")
+
+    raw_uid = roster_contract.get("uid", {})
+    if raw_uid is None:
+        raw_uid = {}
+    if not isinstance(raw_uid, dict):
+        raise ValueError("config.yaml 'roster_contract.uid' must be a mapping")
+
+    mode = str(raw_uid.get("mode", "generated"))
+    if mode not in {"existing", "generated"}:
+        raise ValueError(
+            "config.yaml 'roster_contract.uid.mode' must be 'existing' or 'generated'"
+        )
+
+    source_column = raw_uid.get("source_column")
+    if source_column is not None:
+        source_column = str(source_column)
+
+    raw_key_columns = raw_uid.get("key_columns", ["last", "first", "dob"])
+    if raw_key_columns is None:
+        raw_key_columns = []
+    if not isinstance(raw_key_columns, list):
+        raise ValueError("config.yaml 'roster_contract.uid.key_columns' must be a list")
+    key_columns = [str(column) for column in raw_key_columns]
+
+    if mode == "existing" and not source_column:
+        raise ValueError(
+            "config.yaml 'roster_contract.uid.source_column' is required "
+            "when uid.mode is 'existing'"
+        )
+    if mode == "generated" and not key_columns:
+        raise ValueError(
+            "config.yaml 'roster_contract.uid.key_columns' must not be empty "
+            "when uid.mode is 'generated'"
+        )
+
+    return RosterUidConfig(
+        mode=mode,
+        source_column=source_column,
+        key_columns=key_columns,
+    )
+
+
+def build_candidate_uid_from_values(values: List[str]) -> str:
+    normalized = "|".join(part.strip().casefold() for part in values)
     return hashlib.blake2b(normalized.encode("utf-8"), digest_size=12).hexdigest()
 
 
-def load_roster(roster_path: Optional[Path]) -> List[Dict[str, str]]:
+def build_candidate_uid(first: str, last: str, dob: str) -> str:
+    return build_candidate_uid_from_values([last, first, dob])
+
+
+def normalized_config_column(column_name: str) -> str:
+    return normalize_roster_header(column_name)
+
+
+def require_roster_value(
+    *,
+    cleaned: Mapping[str, str],
+    column_name: str,
+    row_number: int,
+    roster_path: Path,
+) -> str:
+    normalized_column = normalized_config_column(column_name)
+    value = cleaned.get(normalized_column, "")
+    if value == "":
+        raise ValueError(
+            "Roster row {0} in {1} is missing required column '{2}'".format(
+                row_number, roster_path, column_name
+            )
+        )
+    return value
+
+
+def normalize_uid_key_value(
+    *,
+    column_name: str,
+    raw_value: str,
+    roster_path: Path,
+) -> str:
+    if normalized_config_column(column_name) == "dob":
+        return parse_roster_dob(raw_value, roster_path)
+    return raw_value
+
+
+def load_roster(
+    roster_path: Optional[Path], uid_config: Optional[RosterUidConfig] = None
+) -> List[Dict[str, str]]:
     if roster_path is None:
         return []
+
+    if uid_config is None:
+        uid_config = RosterUidConfig(
+            mode="generated",
+            source_column=None,
+            key_columns=["last", "first", "dob"],
+        )
 
     with roster_path.open("r", encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
@@ -182,13 +283,22 @@ def load_roster(roster_path: Optional[Path]) -> List[Dict[str, str]]:
         }
         header_values = set(canonical_headers.values())
 
-        if {"uid", "first", "last"} <= header_values:
-            roster_mode = "uid"
-        elif {"dob", "first", "last"} <= header_values:
-            roster_mode = "dob"
+        required_columns = ["first", "last"]
+        if uid_config.mode == "existing":
+            required_columns.append(str(uid_config.source_column))
         else:
+            required_columns.extend(uid_config.key_columns)
+
+        missing_columns = [
+            column
+            for column in required_columns
+            if normalized_config_column(column) not in header_values
+        ]
+        if missing_columns:
             raise ValueError(
-                "Roster must include either uid,first,last or last,first,dob columns"
+                "Roster {0} is missing required columns: {1}".format(
+                    roster_path, ", ".join(missing_columns)
+                )
             )
 
         for row_number, row in enumerate(reader, start=2):
@@ -206,18 +316,36 @@ def load_roster(roster_path: Optional[Path]) -> List[Dict[str, str]]:
                     )
                 )
 
-            if roster_mode == "uid":
-                uid = cleaned.get("uid", "")
-                if not uid:
-                    raise ValueError(
-                        "Roster row {0} in {1} is missing uid".format(
-                            row_number, roster_path
-                        )
-                    )
+            if uid_config.mode == "existing":
+                uid = require_roster_value(
+                    cleaned=cleaned,
+                    column_name=str(uid_config.source_column),
+                    row_number=row_number,
+                    roster_path=roster_path,
+                )
                 dob = cleaned.get("dob", "")
             else:
-                dob = parse_roster_dob(cleaned.get("dob", ""), roster_path)
-                uid = build_candidate_uid(first=first, last=last, dob=dob)
+                key_values = [
+                    normalize_uid_key_value(
+                        column_name=column_name,
+                        raw_value=require_roster_value(
+                            cleaned=cleaned,
+                            column_name=column_name,
+                            row_number=row_number,
+                            roster_path=roster_path,
+                        ),
+                        roster_path=roster_path,
+                    )
+                    for column_name in uid_config.key_columns
+                ]
+                uid = build_candidate_uid_from_values(key_values)
+                dob = ""
+                for column_name, key_value in zip(uid_config.key_columns, key_values):
+                    if normalized_config_column(column_name) == "dob":
+                        dob = key_value
+                        break
+                if not dob:
+                    dob = cleaned.get("dob", "")
 
             if uid in seen_uids:
                 raise ValueError(
@@ -445,6 +573,8 @@ def validate_generation_inputs(loaded: LoadedTemplateConfig) -> None:
     if not isinstance(files, dict):
         raise ValueError("config.yaml 'files' must be a mapping")
 
+    configured_roster_uid(loaded.config_doc)
+
     sheet_contract = loaded.config_doc.get("sheet_contract", {})
     if sheet_contract is None:
         sheet_contract = {}
@@ -489,7 +619,8 @@ def load_generation_inputs(
 
     metrics_doc = load_yaml(metrics_path)
     evolutions_doc = load_yaml(evolutions_path)
-    roster_rows = load_roster(roster_path)
+    uid_config = configured_roster_uid(config_doc)
+    roster_rows = load_roster(roster_path, uid_config=uid_config)
     metrics_by_id = build_metric_index(metrics_doc)
 
     loaded = LoadedTemplateConfig(
