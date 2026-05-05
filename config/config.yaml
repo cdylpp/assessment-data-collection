@@ -35,6 +35,9 @@ sheet_contract:
     - block_number
     - fiscal_year
 
+workbook_ui:
+  candidate_name_comments: true
+
 # Controlled vocabulary used by metric.domain_ref.
 domains:
   nomination: [positive, negative]
