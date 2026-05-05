@@ -7,12 +7,13 @@ from datetime import datetime, timezone
 import hashlib
 from pathlib import Path
 import re
-from typing import Any, Dict, List, Mapping, Optional, Set
+from typing import Any, Dict, List, Mapping, Optional, Set, Tuple
 
 import yaml
 from openpyxl import Workbook
+from openpyxl.comments import Comment
 from openpyxl.formatting.rule import FormulaRule
-from openpyxl.styles import Font, PatternFill, Protection
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Protection, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.workbook.defined_name import DefinedName
 from openpyxl.worksheet.datavalidation import DataValidation
@@ -22,6 +23,55 @@ HEADER_FILL = PatternFill(fill_type="solid", fgColor="D9E1F2")
 HEADER_FONT = Font(bold=True)
 INVALID_FILL = PatternFill(fill_type="solid", fgColor="F8CBAD")
 INVALID_FONT = Font(color="9C0006")
+WHITE_FILL = PatternFill(fill_type="solid", fgColor="FFFFFF")
+TOUCH_HEADER_ROW_HEIGHT = 26
+TOUCH_ENTRY_ROW_HEIGHT = 30
+TOUCH_ROSTER_COLUMN_WIDTH = 18
+TOUCH_METRIC_COLUMN_WIDTH = 24
+ROW_STRIPE_FILLS = (
+    WHITE_FILL,
+    PatternFill(fill_type="solid", fgColor="F4F7FB"),
+)
+REPEATED_METRIC_FILL_STYLES = (
+    (
+        PatternFill(fill_type="solid", fgColor="E06666"),
+        PatternFill(fill_type="solid", fgColor="F4CCCC"),
+        PatternFill(fill_type="solid", fgColor="EA9999"),
+    ),
+    (
+        PatternFill(fill_type="solid", fgColor="6FA8DC"),
+        PatternFill(fill_type="solid", fgColor="CFE2F3"),
+        PatternFill(fill_type="solid", fgColor="9FC5E8"),
+    ),
+    (
+        PatternFill(fill_type="solid", fgColor="93C47D"),
+        PatternFill(fill_type="solid", fgColor="D9EAD3"),
+        PatternFill(fill_type="solid", fgColor="B6D7A8"),
+    ),
+    (
+        PatternFill(fill_type="solid", fgColor="FFD966"),
+        PatternFill(fill_type="solid", fgColor="FFF2CC"),
+        PatternFill(fill_type="solid", fgColor="FCE5CD"),
+    ),
+    (
+        PatternFill(fill_type="solid", fgColor="B4A7D6"),
+        PatternFill(fill_type="solid", fgColor="D9D2E9"),
+        PatternFill(fill_type="solid", fgColor="C9BFE4"),
+    ),
+    (
+        PatternFill(fill_type="solid", fgColor="76A5AF"),
+        PatternFill(fill_type="solid", fgColor="D0E0E3"),
+        PatternFill(fill_type="solid", fgColor="A2C4C9"),
+    ),
+)
+TABLE_BORDER_SIDE = Side(style="thin", color="B7B7B7")
+TABLE_BORDER = Border(
+    left=TABLE_BORDER_SIDE,
+    right=TABLE_BORDER_SIDE,
+    top=TABLE_BORDER_SIDE,
+    bottom=TABLE_BORDER_SIDE,
+)
+COMMENT_AUTHOR = "Assessment Template"
 DEFAULT_ENTRY_ROWS = 200
 DEFAULT_CONFIG_PATH = "config/config.yaml"
 
@@ -455,6 +505,77 @@ def evolution_metric_display_name(
     return display_name
 
 
+def metric_fill_styles(
+    metric_columns: List[EvolutionMetricColumn],
+) -> Dict[str, Tuple[PatternFill, PatternFill, PatternFill]]:
+    repeated_metric_ids = []
+    for column in metric_columns:
+        if column.occurrence_count > 1 and column.metric_id not in repeated_metric_ids:
+            repeated_metric_ids.append(column.metric_id)
+
+    fills = {}  # type: Dict[str, Tuple[PatternFill, PatternFill, PatternFill]]
+    for index, metric_id in enumerate(repeated_metric_ids):
+        fills[metric_id] = REPEATED_METRIC_FILL_STYLES[
+            index % len(REPEATED_METRIC_FILL_STYLES)
+        ]
+    return fills
+
+
+def shifted_freeze_panes(
+    freeze_panes: Any,
+    *,
+    original_first_candidate_row: int,
+    first_candidate_row: int,
+) -> Any:
+    if not isinstance(freeze_panes, str):
+        return freeze_panes
+    match = re.fullmatch(r"([A-Za-z]+)([0-9]+)", freeze_panes)
+    if not match:
+        return freeze_panes
+    freeze_row = int(match.group(2))
+    if freeze_row == original_first_candidate_row:
+        return "{0}{1}".format(match.group(1), first_candidate_row)
+    return freeze_panes
+
+
+def candidate_name_comments_enabled(config_doc: Mapping[str, Any]) -> bool:
+    workbook_ui = config_doc.get("workbook_ui", {})
+    if workbook_ui is None:
+        return False
+    if not isinstance(workbook_ui, dict):
+        raise ValueError("config.yaml 'workbook_ui' must be a mapping")
+    return bool(workbook_ui.get("candidate_name_comments", False))
+
+
+def candidate_comment_text(
+    *,
+    ws: Any,
+    row_idx: int,
+    roster_field_columns: Mapping[str, int],
+) -> str:
+    first_col = roster_field_columns.get("first")
+    last_col = roster_field_columns.get("last")
+    first = ws.cell(row=row_idx, column=first_col).value if first_col else ""
+    last = ws.cell(row=row_idx, column=last_col).value if last_col else ""
+    first = "" if first is None else str(first)
+    last = "" if last is None else str(last)
+
+    source_refs = []
+    if first_col:
+        source_refs.append("${0}{1}".format(get_column_letter(first_col), row_idx))
+    if last_col:
+        source_refs.append("${0}{1}".format(get_column_letter(last_col), row_idx))
+
+    display_name = " ".join(part for part in (first.strip(), last.strip()) if part)
+    if not display_name:
+        display_name = "Candidate row {0}".format(row_idx)
+
+    return "Candidate: {0}".format(
+        display_name,
+        ", ".join(source_refs) if source_refs else "roster columns",
+    )
+
+
 def validate_metric_definitions(
     config_doc: Mapping[str, Any], metrics_by_id: Mapping[str, Mapping[str, Any]]
 ) -> None:
@@ -642,8 +763,33 @@ def style_header_row(ws: Any, headers: List[str], row_index: int) -> None:
     for col_idx, header in enumerate(headers, start=1):
         cell = ws.cell(row=row_index, column=col_idx, value=header)
         cell.font = HEADER_FONT
-        cell.fill = HEADER_FILL
+        apply_table_cell_style(cell, HEADER_FILL)
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         cell.protection = Protection(locked=True)
+
+
+def apply_touch_row_height(ws: Any, row_index: int, is_header: bool = False) -> None:
+    ws.row_dimensions[row_index].height = (
+        TOUCH_HEADER_ROW_HEIGHT if is_header else TOUCH_ENTRY_ROW_HEIGHT
+    )
+
+
+def apply_blank_fill(
+    ws: Any,
+    *,
+    row_start: int,
+    row_end: int,
+    col_start: int,
+    col_end: int,
+) -> None:
+    for row_idx in range(row_start, row_end + 1):
+        for col_idx in range(col_start, col_end + 1):
+            ws.cell(row=row_idx, column=col_idx).fill = WHITE_FILL
+
+
+def apply_table_cell_style(cell: Any, fill: PatternFill) -> None:
+    cell.fill = fill
+    cell.border = TABLE_BORDER
 
 
 def create_meta_sheet(
@@ -675,6 +821,7 @@ def create_roster_sheet(wb: Workbook, roster_rows: List[Dict[str, str]]) -> None
     ws = wb.create_sheet("ROSTER")
     headers = ["UID", "First", "Last"]
     style_header_row(ws, headers, 1)
+    apply_touch_row_height(ws, 1, is_header=True)
 
     for row_index, row in enumerate(roster_rows, start=2):
         ws.cell(row=row_index, column=1, value=row.get("uid"))
@@ -687,8 +834,12 @@ def create_roster_sheet(wb: Workbook, roster_rows: List[Dict[str, str]]) -> None
 
     editable_row_end = max(2, len(roster_rows) + DEFAULT_ENTRY_ROWS)
     for row_index in range(2, editable_row_end + 1):
+        apply_touch_row_height(ws, row_index)
+        row_fill = ROW_STRIPE_FILLS[(row_index - 2) % len(ROW_STRIPE_FILLS)]
         for col_idx in range(1, 4):
-            ws.cell(row=row_index, column=col_idx).protection = Protection(locked=False)
+            cell = ws.cell(row=row_index, column=col_idx)
+            apply_table_cell_style(cell, row_fill)
+            cell.protection = Protection(locked=False)
     ws.protection.sheet = True
     ws.protection.enable()
 
@@ -824,6 +975,7 @@ def evolution_sheet_name(evolution: Mapping[str, Any]) -> str:
 
 def create_evolution_sheets(
     wb: Workbook,
+    config_doc: Mapping[str, Any],
     evolutions_doc: Mapping[str, Any],
     metrics_by_id: Mapping[str, Mapping[str, Any]],
     roster_rows: List[Dict[str, str]],
@@ -842,56 +994,160 @@ def create_evolution_sheets(
         if field not in {"uid", "first", "last"}
     ]
     header_row = int(sheet_contract.get("header_row", 1))
-    metric_id_row = int(sheet_contract.get("metric_id_row", header_row + 1))
-    first_candidate_row = int(
-        sheet_contract.get("first_candidate_row", max(header_row, metric_id_row) + 1)
+    occurrence_label_row = int(sheet_contract.get("metric_id_row", header_row + 1))
+    machine_metric_id_row = occurrence_label_row + 1
+    configured_first_candidate_row = int(
+        sheet_contract.get(
+            "first_candidate_row", max(header_row, occurrence_label_row) + 1
+        )
     )
-    freeze_panes = sheet_contract.get("freeze_panes", "D3")
+    first_candidate_row = max(
+        configured_first_candidate_row,
+        machine_metric_id_row + 1,
+    )
+    freeze_panes = shifted_freeze_panes(
+        sheet_contract.get("freeze_panes", "D3"),
+        original_first_candidate_row=configured_first_candidate_row,
+        first_candidate_row=first_candidate_row,
+    )
 
     edit_row_count = max(len(roster_rows), entry_rows)
     edit_row_end = first_candidate_row + edit_row_count - 1
+    candidate_row_count = len(roster_rows) if roster_rows else edit_row_count
+    candidate_row_end = first_candidate_row + candidate_row_count - 1
+    add_candidate_comments = candidate_name_comments_enabled(config_doc)
 
     for evolution in evolutions_doc["evolutions"]:
         ws = wb.create_sheet(evolution_sheet_name(evolution))
 
         metric_columns = evolution_metric_columns(evolution)
+        metric_styles = metric_fill_styles(metric_columns)
         roster_headers = {"uid": "UID", "first": "First", "last": "Last"}
-        headers = [
-            roster_headers.get(field, field.capitalize()) for field in roster_fields
-        ]
-        headers.extend(
-            evolution_metric_display_name(metrics_by_id[column.metric_id], column)
-            for column in metric_columns
+        total_data_columns = len(roster_fields) + len(metric_columns)
+        metric_start_col = len(roster_fields) + 1
+        meta_start_col = total_data_columns + 2
+        roster_field_columns = {
+            field: col_idx for col_idx, field in enumerate(roster_fields, start=1)
+        }
+
+        apply_blank_fill(
+            ws,
+            row_start=1,
+            row_end=edit_row_end,
+            col_start=1,
+            col_end=meta_start_col + 1,
         )
-        style_header_row(ws, headers, header_row)
+
+        for row_idx in (header_row, occurrence_label_row):
+            apply_touch_row_height(ws, row_idx, is_header=True)
+
+        for col_idx, field in enumerate(roster_fields, start=1):
+            header = roster_headers.get(field, field.capitalize())
+            for row_idx in range(header_row, occurrence_label_row + 1):
+                cell = ws.cell(row=row_idx, column=col_idx)
+                cell.font = HEADER_FONT
+                apply_table_cell_style(cell, HEADER_FILL)
+                cell.alignment = Alignment(
+                    horizontal="center", vertical="center", wrap_text=True
+                )
+                cell.protection = Protection(locked=True)
+            ws.cell(row=header_row, column=col_idx, value=header)
+            if occurrence_label_row > header_row:
+                ws.merge_cells(
+                    start_row=header_row,
+                    start_column=col_idx,
+                    end_row=occurrence_label_row,
+                    end_column=col_idx,
+                )
+
+        offset = 0
+        while offset < len(metric_columns):
+            column = metric_columns[offset]
+            group_start_offset = offset
+            while (
+                offset + 1 < len(metric_columns)
+                and metric_columns[offset + 1].metric_id == column.metric_id
+            ):
+                offset += 1
+            group_end_offset = offset
+            group_start_col = metric_start_col + group_start_offset
+            group_end_col = metric_start_col + group_end_offset
+            header_fill = metric_styles.get(
+                column.metric_id, (HEADER_FILL, WHITE_FILL, WHITE_FILL)
+            )[0]
+            display_name = str(
+                metrics_by_id[column.metric_id].get("display_name", column.metric_id)
+            )
+
+            for col_idx in range(group_start_col, group_end_col + 1):
+                for row_idx in range(header_row, occurrence_label_row + 1):
+                    cell = ws.cell(row=row_idx, column=col_idx)
+                    cell.font = HEADER_FONT
+                    apply_table_cell_style(cell, header_fill)
+                    cell.alignment = Alignment(
+                        horizontal="center", vertical="center", wrap_text=True
+                    )
+                    cell.protection = Protection(locked=True)
+
+            ws.cell(row=header_row, column=group_start_col, value=display_name)
+            if group_end_col > group_start_col:
+                ws.merge_cells(
+                    start_row=header_row,
+                    start_column=group_start_col,
+                    end_row=header_row,
+                    end_column=group_end_col,
+                )
+                for occurrence_offset in range(
+                    group_start_offset, group_end_offset + 1
+                ):
+                    label_col = metric_start_col + occurrence_offset
+                    ws.cell(
+                        row=occurrence_label_row,
+                        column=label_col,
+                        value=metric_columns[occurrence_offset].occurrence_index,
+                    )
+            elif occurrence_label_row > header_row:
+                ws.merge_cells(
+                    start_row=header_row,
+                    start_column=group_start_col,
+                    end_row=occurrence_label_row,
+                    end_column=group_start_col,
+                )
+
+            offset += 1
+
         machine_headers = list(roster_fields) + [
             column.metric_id for column in metric_columns
         ]
         for col_idx, value in enumerate(machine_headers, start=1):
-            cell = ws.cell(row=metric_id_row, column=col_idx, value=value)
+            cell = ws.cell(row=machine_metric_id_row, column=col_idx, value=value)
             cell.protection = Protection(locked=True)
-        ws.row_dimensions[metric_id_row].hidden = True
+        ws.row_dimensions[machine_metric_id_row].hidden = True
         ws.freeze_panes = freeze_panes
 
         for row_idx, roster in enumerate(roster_rows, start=first_candidate_row):
             for col_idx, field in enumerate(roster_fields, start=1):
                 ws.cell(row=row_idx, column=col_idx, value=roster.get(field, ""))
 
-        meta_start_col = len(headers) + 2
         ws.cell(row=1, column=meta_start_col, value="evolution_id").font = HEADER_FONT
         ws.cell(row=1, column=meta_start_col + 1, value=evolution["evolution_id"])
         ws.cell(row=2, column=meta_start_col, value="block_number").font = HEADER_FONT
         ws.cell(row=2, column=meta_start_col + 1, value=block_number)
-        ws.cell(row=3, column=meta_start_col, value="fiscal_year").font = HEADER_FONT
-        ws.cell(row=3, column=meta_start_col + 1, value=fiscal_year)
+        ws.cell(
+            row=first_candidate_row, column=meta_start_col, value="fiscal_year"
+        ).font = HEADER_FONT
+        ws.cell(row=first_candidate_row, column=meta_start_col + 1, value=fiscal_year)
         ws.cell(row=1, column=meta_start_col).protection = Protection(locked=True)
         ws.cell(row=1, column=meta_start_col + 1).protection = Protection(locked=True)
         ws.cell(row=2, column=meta_start_col).protection = Protection(locked=True)
         ws.cell(row=2, column=meta_start_col + 1).protection = Protection(locked=True)
-        ws.cell(row=3, column=meta_start_col).protection = Protection(locked=True)
-        ws.cell(row=3, column=meta_start_col + 1).protection = Protection(locked=True)
+        ws.cell(row=first_candidate_row, column=meta_start_col).protection = Protection(
+            locked=True
+        )
+        ws.cell(
+            row=first_candidate_row, column=meta_start_col + 1
+        ).protection = Protection(locked=True)
 
-        metric_start_col = len(roster_fields) + 1
         for offset, column in enumerate(metric_columns):
             col_idx = metric_start_col + offset
             metric = metrics_by_id[column.metric_id]
@@ -903,20 +1159,56 @@ def create_evolution_sheets(
                 row_end=edit_row_end,
                 domain_named_ranges=domain_named_ranges,
             )
-            ws.column_dimensions[get_column_letter(col_idx)].width = 24
+            ws.column_dimensions[
+                get_column_letter(col_idx)
+            ].width = TOUCH_METRIC_COLUMN_WIDTH
 
         for col_idx in range(1, len(roster_fields) + 1):
-            ws.column_dimensions[get_column_letter(col_idx)].width = 16
+            ws.column_dimensions[
+                get_column_letter(col_idx)
+            ].width = TOUCH_ROSTER_COLUMN_WIDTH
 
         ws.protection.sheet = True
         ws.protection.enable()
         for row_idx in range(first_candidate_row, edit_row_end + 1):
+            apply_touch_row_height(ws, row_idx)
+            row_fill = ROW_STRIPE_FILLS[
+                (row_idx - first_candidate_row) % len(ROW_STRIPE_FILLS)
+            ]
             for col_idx in range(1, len(roster_fields) + 1):
-                ws.cell(row=row_idx, column=col_idx).protection = Protection(locked=True)
-            for col_idx in range(
-                metric_start_col, metric_start_col + len(metric_columns)
-            ):
-                ws.cell(row=row_idx, column=col_idx).protection = Protection(locked=False)
+                cell = ws.cell(row=row_idx, column=col_idx)
+                if row_idx <= candidate_row_end:
+                    apply_table_cell_style(cell, WHITE_FILL)
+                else:
+                    cell.fill = WHITE_FILL
+                cell.protection = Protection(locked=True)
+            for offset, column in enumerate(metric_columns):
+                col_idx = metric_start_col + offset
+                cell = ws.cell(row=row_idx, column=col_idx)
+                if row_idx <= candidate_row_end:
+                    style = metric_styles.get(column.metric_id)
+                    if style:
+                        _, light_fill, dark_fill = style
+                        fill = (
+                            dark_fill
+                            if (row_idx - first_candidate_row) % 2 == 0
+                            else light_fill
+                        )
+                    else:
+                        fill = row_fill
+                    apply_table_cell_style(cell, fill)
+                    if add_candidate_comments:
+                        cell.comment = Comment(
+                            candidate_comment_text(
+                                ws=ws,
+                                row_idx=row_idx,
+                                roster_field_columns=roster_field_columns,
+                            ),
+                            COMMENT_AUTHOR,
+                        )
+                else:
+                    cell.fill = WHITE_FILL
+                cell.protection = Protection(locked=False)
 
 
 def default_output_path(loaded: LoadedTemplateConfig) -> Path:
@@ -945,6 +1237,7 @@ def build_workbook(
     )
     create_evolution_sheets(
         wb=wb,
+        config_doc=loaded.config_doc,
         evolutions_doc=loaded.evolutions_doc,
         metrics_by_id=loaded.metrics_by_id,
         roster_rows=loaded.roster_rows,

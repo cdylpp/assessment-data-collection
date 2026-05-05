@@ -498,6 +498,42 @@ def roster_columns_for_sheet(
     return roster_columns
 
 
+def detect_machine_header_row(
+    *,
+    ws: Any,
+    configured_metric_id_row: int,
+    metrics_by_id: Mapping[str, Mapping[str, Any]],
+    roster_fields: Sequence[str],
+) -> int:
+    rows_to_check = [configured_metric_id_row]
+    for row_index in range(1, min(ws.max_row, configured_metric_id_row + 4) + 1):
+        if row_index not in rows_to_check:
+            rows_to_check.append(row_index)
+    roster_field_set = set(roster_fields)
+
+    for row_index in rows_to_check:
+        has_metric_header = False
+        has_roster_header = False
+        for col_idx in range(1, ws.max_column + 1):
+            value = ws.cell(row=row_index, column=col_idx).value
+            if value in metrics_by_id:
+                has_metric_header = True
+            if value in roster_field_set:
+                has_roster_header = True
+        if has_metric_header and has_roster_header:
+            return row_index
+
+    return configured_metric_id_row
+
+
+def detected_first_candidate_row(
+    *,
+    configured_first_candidate_row: int,
+    machine_header_row: int,
+) -> int:
+    return max(configured_first_candidate_row, machine_header_row + 1)
+
+
 def ingest_node_workbook(
     *,
     workbook_path: Path,
@@ -516,8 +552,10 @@ def ingest_node_workbook(
         default_null_rule = loaded.master_doc.get("defaults", {}).get("null_rule", {})
         roster_fields = configured_roster_fields(loaded)
         sheet_contract = loaded.template.config_doc.get("sheet_contract", {})
-        metric_id_row = int(sheet_contract.get("metric_id_row", 2))
-        first_candidate_row = int(sheet_contract.get("first_candidate_row", 3))
+        configured_metric_id_row = int(sheet_contract.get("metric_id_row", 2))
+        configured_first_candidate_row = int(
+            sheet_contract.get("first_candidate_row", 3)
+        )
 
         system_sheets = {"META", "ROSTER", "LOOKUPS", "MASTER"}
         for sheet_name in workbook.sheetnames:
@@ -525,6 +563,16 @@ def ingest_node_workbook(
                 continue
 
             ws = workbook[sheet_name]
+            metric_id_row = detect_machine_header_row(
+                ws=ws,
+                configured_metric_id_row=configured_metric_id_row,
+                metrics_by_id=loaded.template.metrics_by_id,
+                roster_fields=roster_fields,
+            )
+            first_candidate_row = detected_first_candidate_row(
+                configured_first_candidate_row=configured_first_candidate_row,
+                machine_header_row=metric_id_row,
+            )
             metric_columns = metric_columns_for_sheet(
                 ws=ws,
                 metric_id_row=metric_id_row,

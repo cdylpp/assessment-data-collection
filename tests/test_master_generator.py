@@ -59,12 +59,12 @@ class MasterGeneratorTest(unittest.TestCase):
 
             set_sheet_value(node_path, "PST", "D1", "Push Ups Custom Label")
             rename_sheet(node_path, "PST", "PST Custom")
-            set_sheet_value(node_path, "PST Custom", "D3", 61)
-            set_sheet_value(node_path, "PST Custom", "E3", 62)
-            set_sheet_value(node_path, "PST Custom", "F3", 13)
-            set_sheet_value(node_path, "PST Custom", "G3", 600 / 86400)
-            set_sheet_value(node_path, "PST Custom", "H3", 720 / 86400)
-            set_sheet_value(node_path, "Pool 1", "H3", "Pass")
+            set_sheet_value(node_path, "PST Custom", "D4", 61)
+            set_sheet_value(node_path, "PST Custom", "E4", 62)
+            set_sheet_value(node_path, "PST Custom", "F4", 13)
+            set_sheet_value(node_path, "PST Custom", "G4", 600 / 86400)
+            set_sheet_value(node_path, "PST Custom", "H4", 720 / 86400)
+            set_sheet_value(node_path, "Pool 1", "H4", "Pass")
 
             generated_path = generate_master_workbook(
                 MasterGenerationRequest(
@@ -116,10 +116,10 @@ class MasterGeneratorTest(unittest.TestCase):
                     )
                 )
 
-            set_sheet_value(node_a_path, "PST", "D3", 45)
-            set_sheet_value(node_b_path, "PST", "E3", 55)
-            set_sheet_value(node_a_path, "Log PT 1", "D3", 3)
-            set_sheet_value(node_b_path, "Log PT 2", "D3", 5)
+            set_sheet_value(node_a_path, "PST", "D4", 45)
+            set_sheet_value(node_b_path, "PST", "E4", 55)
+            set_sheet_value(node_a_path, "Log PT 1", "D4", 3)
+            set_sheet_value(node_b_path, "Log PT 2", "D4", 5)
 
             generated_path = generate_master_workbook(
                 MasterGenerationRequest(

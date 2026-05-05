@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import yaml
 from openpyxl import load_workbook
 
 
@@ -19,6 +20,7 @@ from template_generator import (  # noqa: E402
     build_candidate_uid_from_values,
     generate_template_workbook,
     load_generation_inputs,
+    load_yaml,
     load_roster,
 )
 
@@ -108,10 +110,21 @@ class TemplateGeneratorSmokeTest(unittest.TestCase):
                 self.assertIn("LOOKUPS", workbook.sheetnames)
                 self.assertIn("PST", workbook.sheetnames)
                 pst = workbook["PST"]
-                self.assertTrue(pst.row_dimensions[2].hidden)
-                self.assertEqual(pst["A2"].value, "uid")
-                self.assertEqual(pst["D2"].value, "m_push_ups")
-                self.assertEqual(pst["A3"].value, workbook["ROSTER"]["A2"].value)
+                self.assertFalse(pst.row_dimensions[2].hidden)
+                self.assertTrue(pst.row_dimensions[3].hidden)
+                self.assertEqual(pst["A3"].value, "uid")
+                self.assertEqual(pst["D3"].value, "m_push_ups")
+                self.assertEqual(pst["A4"].value, workbook["ROSTER"]["A2"].value)
+                self.assertIsNotNone(pst["D4"].comment)
+                self.assertIn("Candidate: Lucas Andrew", pst["D4"].comment.text)
+                self.assertIn("Source cells: $B4, $C4", pst["D4"].comment.text)
+                self.assertEqual(pst.freeze_panes, "D4")
+                self.assertEqual(pst.row_dimensions[4].height, 30)
+                self.assertEqual(pst.column_dimensions["D"].width, 24)
+                self.assertNotEqual(
+                    pst["D4"].fill.fgColor.rgb,
+                    pst["D5"].fill.fgColor.rgb,
+                )
 
                 ibs = workbook["IBS PT Land Portage"]
                 ibs_config = next(
@@ -122,16 +135,68 @@ class TemplateGeneratorSmokeTest(unittest.TestCase):
                 occurrence_count = ibs_config["metric_occurrences"][
                     "m_ibs_low_carry_physicality"
                 ]
+                self.assertEqual(ibs["D1"].value, "IBS Low Carry - Physicality")
+                self.assertEqual(ibs["D2"].value, 1)
+                self.assertEqual(ibs["I2"].value, occurrence_count)
+                self.assertEqual(ibs["D3"].value, "m_ibs_low_carry_physicality")
+                self.assertIn(
+                    "D1:I1",
+                    [str(merged_range) for merged_range in ibs.merged_cells.ranges],
+                )
+                repeated_fill = ibs["D2"].fill.fgColor.rgb
+                self.assertNotEqual(ibs["D4"].fill.fgColor.rgb, "00FFFFFF")
+                self.assertEqual(ibs["D4"].fill.fgColor.rgb, ibs["I4"].fill.fgColor.rgb)
+                self.assertNotEqual(ibs["D4"].fill.fgColor.rgb, ibs["J4"].fill.fgColor.rgb)
+                self.assertNotEqual(ibs["D4"].fill.fgColor.rgb, ibs["D5"].fill.fgColor.rgb)
+                self.assertEqual(ibs["D4"].border.right.style, "thin")
+                self.assertEqual(ibs["D9"].fill.fgColor.rgb, "00FFFFFF")
                 for offset in range(occurrence_count):
                     col_idx = 4 + offset
                     self.assertEqual(
-                        ibs.cell(row=1, column=col_idx).value,
-                        "IBS Low Carry - Physicality {0}".format(offset + 1),
+                        ibs.cell(row=2, column=col_idx).value,
+                        offset + 1,
                     )
                     self.assertEqual(
-                        ibs.cell(row=2, column=col_idx).value,
+                        ibs.cell(row=3, column=col_idx).value,
                         "m_ibs_low_carry_physicality",
                     )
+                    self.assertEqual(
+                        ibs.cell(row=2, column=col_idx).fill.fgColor.rgb,
+                        repeated_fill,
+                    )
+            finally:
+                workbook.close()
+
+    def test_candidate_comments_can_be_disabled(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            config_dir = temp_root / "config"
+            config_dir.mkdir()
+            config_doc = load_yaml(REPO_ROOT / "config" / "config.yaml")
+            config_doc["files"] = {
+                "metrics": str((REPO_ROOT / "config" / "metrics.yaml").resolve()),
+                "evolutions": str((REPO_ROOT / "config" / "evolutions.yaml").resolve()),
+                "roster": str((REPO_ROOT / "config" / "roster.csv").resolve()),
+                "master": str((REPO_ROOT / "config" / "master-config.yaml").resolve()),
+            }
+            config_doc["workbook_ui"] = {"candidate_name_comments": False}
+            config_path = config_dir / "config.yaml"
+            config_path.write_text(yaml.safe_dump(config_doc), encoding="utf-8")
+            output_path = temp_root / "comments_disabled.xlsx"
+
+            generated_path = generate_template_workbook(
+                TemplateGenerationRequest(
+                    config_path=config_path,
+                    output_path=output_path,
+                    block_number="B01",
+                    fiscal_year="2026",
+                    entry_rows=10,
+                )
+            )
+
+            workbook = load_workbook(generated_path)
+            try:
+                self.assertIsNone(workbook["PST"]["D4"].comment)
             finally:
                 workbook.close()
 
