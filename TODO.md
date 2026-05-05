@@ -1,5 +1,18 @@
 # TODO
 
+## New Feature Requests
+
+Let's prioritize the following feature requests based on conversations with the customer.
+The features revolve around improving the UI/UX of the generated templates, and we will keep the scope of this updates to the scripts that generate these templates.
+
+- [ ] For metrics that occur more than once in an evolution, group the metrics over a single display header and color code the columns all the same color. Underneath the header for the occurrences, label each occurrence with simple $i$ for the $i$th occurrence.
+- [ ] Expand the cells to be optimized for a touch screen. That is, alter each cell height and width for selecting with fingers.
+- [ ] For each table, offset the shading of each row so that neighboring rows are clearly shown.
+
+Once the updates have been implemented, run the generator to generate a record so we can visualize and assess.
+
+
+
 ## Master File Aggregator
 
 ### Assertions that must be true before starting aggregator
