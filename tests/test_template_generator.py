@@ -23,6 +23,8 @@ from template_generator import (  # noqa: E402
     load_yaml,
     load_roster,
 )
+from evaluator import Evaluator  # noqa: E402
+from event_resolver import EventResolver  # noqa: E402
 
 
 class TemplateGeneratorSmokeTest(unittest.TestCase):
@@ -41,6 +43,21 @@ class TemplateGeneratorSmokeTest(unittest.TestCase):
             loaded.roster_rows[0]["uid"],
             build_candidate_uid_from_values(["Andrew", "Lucas", "2004-12-16"]),
         )
+        self.assertIsNotNone(loaded.assessment_config)
+        assert loaded.assessment_config is not None
+        plan = EventResolver(loaded.assessment_config).resolve()
+        self.assertEqual(plan.event_id, "soac_fy_2026_block1")
+        self.assertIn(
+            "soac_fy_2026_block1__evo_grit_pt__5",
+            [instance.instance_id for instance in plan.instances],
+        )
+        grit_fifth = next(
+            instance
+            for instance in plan.instances
+            if instance.instance_id == "soac_fy_2026_block1__evo_grit_pt__5"
+        )
+        self.assertEqual(grit_fifth.sheet_name, "Grit PT #5")
+        self.assertEqual(grit_fifth.event_occurrence_index, 5)
 
     def test_load_roster_uses_existing_uid_column_from_config(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -109,6 +126,10 @@ class TemplateGeneratorSmokeTest(unittest.TestCase):
                 self.assertIn("ROSTER", workbook.sheetnames)
                 self.assertIn("LOOKUPS", workbook.sheetnames)
                 self.assertIn("PST", workbook.sheetnames)
+                self.assertIn("Grit PT #1", workbook.sheetnames)
+                self.assertIn("Grit PT #5", workbook.sheetnames)
+                self.assertIn("Log Carry around O Course", workbook.sheetnames)
+                self.assertIn("IBS Land Portage #2", workbook.sheetnames)
                 pst = workbook["PST"]
                 self.assertFalse(pst.row_dimensions[2].hidden)
                 self.assertTrue(pst.row_dimensions[3].hidden)
@@ -126,46 +147,104 @@ class TemplateGeneratorSmokeTest(unittest.TestCase):
                     pst["D5"].fill.fgColor.rgb,
                 )
 
-                ibs = workbook["IBS PT Land Portage"]
-                ibs_config = next(
+                grit = workbook["Grit PT #1"]
+                grit_config = next(
                     evolution
                     for evolution in loaded.evolutions_doc["evolutions"]
-                    if evolution["evolution_id"] == "evo_ibs_pt_land_portage"
+                    if evolution["evolution_id"] == "evo_grit_pt"
                 )
-                occurrence_count = ibs_config["metric_occurrences"][
-                    "m_ibs_low_carry_physicality"
+                occurrence_count = grit_config["metric_occurrences"][
+                    "m_grit_pt_physicality"
                 ]
-                self.assertEqual(ibs["D1"].value, "IBS Low Carry - Physicality")
-                self.assertEqual(ibs["D2"].value, 1)
-                self.assertEqual(ibs["I2"].value, occurrence_count)
-                self.assertEqual(ibs["D3"].value, "m_ibs_low_carry_physicality")
+                self.assertEqual(grit["D1"].value, "Grit PT - Physicality")
+                self.assertEqual(grit["W1"].value, "evolution_id")
+                self.assertEqual(grit["X1"].value, "evo_grit_pt")
+                self.assertEqual(grit["W2"].value, "event_id")
+                self.assertEqual(grit["X2"].value, "soac_fy_2026_block1")
+                self.assertEqual(grit["W4"].value, "event_instance_id")
+                self.assertEqual(
+                    grit["X4"].value,
+                    "soac_fy_2026_block1__evo_grit_pt__1",
+                )
+                self.assertEqual(grit["W5"].value, "event_occurrence_index")
+                self.assertEqual(grit["X5"].value, 1)
+                self.assertEqual(grit["D2"].value, 1)
+                self.assertEqual(grit["I2"].value, occurrence_count)
+                self.assertEqual(grit["D3"].value, "m_grit_pt_physicality")
                 self.assertIn(
                     "D1:I1",
-                    [str(merged_range) for merged_range in ibs.merged_cells.ranges],
+                    [str(merged_range) for merged_range in grit.merged_cells.ranges],
                 )
-                repeated_fill = ibs["D2"].fill.fgColor.rgb
-                self.assertNotEqual(ibs["D4"].fill.fgColor.rgb, "00FFFFFF")
-                self.assertEqual(ibs["D4"].fill.fgColor.rgb, ibs["I4"].fill.fgColor.rgb)
-                self.assertNotEqual(ibs["D4"].fill.fgColor.rgb, ibs["J4"].fill.fgColor.rgb)
-                self.assertNotEqual(ibs["D4"].fill.fgColor.rgb, ibs["D5"].fill.fgColor.rgb)
-                self.assertEqual(ibs["D4"].border.right.style, "thin")
-                self.assertEqual(ibs["D9"].fill.fgColor.rgb, "00FFFFFF")
+                repeated_fill = grit["D2"].fill.fgColor.rgb
+                self.assertNotEqual(grit["D4"].fill.fgColor.rgb, "00FFFFFF")
+                self.assertEqual(grit["D4"].fill.fgColor.rgb, grit["I4"].fill.fgColor.rgb)
+                self.assertNotEqual(grit["D4"].fill.fgColor.rgb, grit["J4"].fill.fgColor.rgb)
+                self.assertNotEqual(grit["D4"].fill.fgColor.rgb, grit["D5"].fill.fgColor.rgb)
+                self.assertEqual(grit["D4"].border.right.style, "thin")
+                self.assertEqual(grit["D9"].fill.fgColor.rgb, "00FFFFFF")
                 for offset in range(occurrence_count):
                     col_idx = 4 + offset
                     self.assertEqual(
-                        ibs.cell(row=2, column=col_idx).value,
+                        grit.cell(row=2, column=col_idx).value,
                         offset + 1,
                     )
                     self.assertEqual(
-                        ibs.cell(row=3, column=col_idx).value,
-                        "m_ibs_low_carry_physicality",
+                        grit.cell(row=3, column=col_idx).value,
+                        "m_grit_pt_physicality",
                     )
                     self.assertEqual(
-                        ibs.cell(row=2, column=col_idx).fill.fgColor.rgb,
+                        grit.cell(row=2, column=col_idx).fill.fgColor.rgb,
                         repeated_fill,
                     )
             finally:
                 workbook.close()
+
+    def test_evaluator_reports_event_and_metric_inconsistencies(self) -> None:
+        result = Evaluator(
+            metrics_doc={"metrics": [{"metric_id": "m_defined"}]},
+            evolutions_doc={
+                "evolutions": [
+                    {
+                        "evolution_id": "evo_blank",
+                        "metric_ids": [],
+                    },
+                    {
+                        "evolution_id": "evo_singular",
+                        "metric_id": ["m_defined"],
+                    },
+                    {
+                        "evolution_id": "evo_unknown_metric",
+                        "metric_ids": ["m_missing"],
+                    },
+                ]
+            },
+            events_doc={
+                "events": [
+                    {
+                        "event_id": "event_invalid",
+                        "evolutions": [
+                            "evo_blank",
+                            {"id": "evo_missing"},
+                        ],
+                    }
+                ]
+            },
+        ).evaluate()
+
+        messages = [issue.message for issue in result.errors]
+        self.assertFalse(result.is_valid)
+        self.assertTrue(
+            any("evo_missing" in message for message in messages),
+            result.error_message(),
+        )
+        self.assertTrue(
+            any("evo_blank" in message for message in messages),
+            result.error_message(),
+        )
+        self.assertTrue(
+            any("'metric_id'; expected 'metric_ids'" in message for message in messages),
+            result.error_message(),
+        )
 
     def test_candidate_comments_can_be_disabled(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

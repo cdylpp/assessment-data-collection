@@ -64,7 +64,6 @@ class MasterGeneratorTest(unittest.TestCase):
             set_sheet_value(node_path, "PST Custom", "F4", 13)
             set_sheet_value(node_path, "PST Custom", "G4", 600 / 86400)
             set_sheet_value(node_path, "PST Custom", "H4", 720 / 86400)
-            set_sheet_value(node_path, "Pool 1", "H4", "Pass")
 
             generated_path = generate_master_workbook(
                 MasterGenerationRequest(
@@ -89,7 +88,7 @@ class MasterGeneratorTest(unittest.TestCase):
                 self.assertEqual(ws["C2"].value, first_roster_row["first"])
                 self.assertEqual(ws["D2"].value, "101")
                 self.assertEqual(ws["E2"].value, "node_a.xlsx")
-                self.assertEqual(ws["G2"].value, "Pass")
+                self.assertIsNone(ws["G2"].value)
                 self.assertEqual(ws["H2"].value, 61)
                 self.assertEqual(ws["I2"].value, 62)
                 self.assertEqual(ws["J2"].value, 13)
@@ -118,8 +117,8 @@ class MasterGeneratorTest(unittest.TestCase):
 
             set_sheet_value(node_a_path, "PST", "D4", 45)
             set_sheet_value(node_b_path, "PST", "E4", 55)
-            set_sheet_value(node_a_path, "Log PT 1", "D4", 3)
-            set_sheet_value(node_b_path, "Log PT 2", "D4", 5)
+            set_sheet_value(node_a_path, "Log PT", "D4", 3)
+            set_sheet_value(node_b_path, "Log Carry around O Course", "D4", 5)
 
             generated_path = generate_master_workbook(
                 MasterGenerationRequest(

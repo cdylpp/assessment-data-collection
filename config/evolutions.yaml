@@ -1,5 +1,5 @@
 version: 2.0
-registry_name: usna_screener_evos
+registry_name: soac_fy_2026_v1
 
 # Build contract for every evolution sheet.
 sheet_defaults:
@@ -38,51 +38,136 @@ evolutions:
       - m_run_time_seconds
       - m_swim_time_seconds
 
+  - evolution_id: evo_5_mile_run
+    display_name: "5 Mile Timed Run"
+    sheet_name: "5 Mile Run"
+    metric_ids:
+      - m_5mile_run_time_seconds
+
+  - evolution_id: evo_grit_pt
+    display_name: "Grit PT"
+    sheet_name: "Grit PT"
+    metric_occurrences:
+      m_grit_pt_physicality: 6
+      m_grit_pt_teamability: 6
+      m_grit_pt_communication: 6
+    metric_ids:
+      - m_grit_pt_physicality
+      - m_grit_pt_teamability
+      - m_grit_pt_communication
+
+  - evolution_id: evo_face_mask_apprec
+    display_name: "Face Mask Appreciation"
+    sheet_name: "Face Mask"
+    metric_ids:
+      - m_face_mask_apprec
+
+  - evolution_id: evo_ibs_low_carry
+    display_name: "IBS Low Carry"
+    sheet_name: "IBS Low Carry"
+    metric_occurrences:
+      m_ibs_low_carry_physicality: 6
+      m_ibs_low_carry_teamability: 6
+      m_ibs_low_carry_communication: 6
+    metric_ids:
+      - m_ibs_low_carry_physicality
+      - m_ibs_low_carry_teamability
+      - m_ibs_low_carry_communication
+
+  - evolution_id: evo_ibs_surf_passage
+    display_name: "IBS Surf Passage"
+    sheet_name: "IBS Surf Passage"
+    metric_occurrences:
+      m_ibs_surf_passage_physicality: 6
+      m_ibs_surf_passage_teamability: 6
+      m_ibs_surf_passage_communication: 6
+    metric_ids:
+      - m_ibs_surf_passage_physicality
+      - m_ibs_surf_passage_teamability
+      - m_ibs_surf_passage_communication
+
+  - evolution_id: evo_scenarios
+    display_name: "Scenarios"
+    sheet_name: "Scenarios"
+    metric_ids:
+      - m_scenarios
+
+  - evolution_id: evo_teach_backs
+    display_name: "Teach Backs"
+    sheet_name: "Teach Backs"
+    metric_ids:
+    - m_teach_backs
+  
+  - evolution_id: evo_ocourse
+    display_name: "Obstacle Course"
+    sheet_name: "O-Course"
+    metric_ids:
+      - m_ocourse_pass_fail
+      - m_ocourse_time
+      - m_ocourse_fail
+
+  - evolution_id: evo_open_args
+    display_name: "Opening Arguments"
+    sheet_name: "Opening Arguments"
+    metric_ids:
+      - m_opening_arguments
+
+  - evolution_id: evo_log_pt
+    display_name: "Log PT"
+    sheet_name: "Log PT"
+    metric_occurrences:
+      m_log_pt_physicality: 6
+      m_log_pt_teamability: 6
+      m_log_pt_communication: 6
+    metric_ids:
+      - m_log_pt_physicality
+      - m_log_pt_teamability
+      - m_log_pt_communication
+
+  - evolution_id: evo_ibs_land_portage
+    display_name: "IBS Land Portage"
+    sheet_name: "Land Portage"
+    metric_occurrences:
+      m_ibs_land_portage_physicality: 6
+      m_ibs_land_portage_teamability: 6
+      m_ibs_land_portage_communication: 6
+    metric_ids:
+      - m_ibs_land_portage_physicality
+      - m_ibs_land_portage_teamability
+      - m_ibs_land_portage_communication
+
+  - evolution_id: evo_down_man_drills
+    display_name: "Down Man Drills"
+    sheet_name: "Down Man Drills"
+    metric_occurrences:
+      m_down_man: 6
+    metric_ids:
+      - m_down_man
+
   - evolution_id: evo_breakout_1
     display_name: "Breakout #1"
     sheet_name: "Breakout 1"
     metric_ids:
       - m_kims_game_communication
-      - m_opening_arguments
-      - m_scenarios
 
-  - evolution_id: evo_log_pt_1
-    display_name: "Log PT #1"
-    sheet_name: "Log PT 1"
-    metric_occurrences:
-      m_log_pt_physicality: 6
-      m_log_pt_teamability: 6
+  - evolution_id: evo_pool_swim
+    display_name: "1NM Pool Swim"
+    sheet_name: "Pool Swim"
     metric_ids:
-      - m_log_pt_physicality
-      - m_log_pt_teamability
+      - m_1nm_swim_time_seconds
 
-  - evolution_id: evo_ibs_pt_land_portage
-    display_name: "IBS PT / Land Portage"
-    sheet_name: "IBS PT Land Portage"
-    metric_occurrences:
-      m_ibs_low_carry_physicality: 6
-      m_ibs_low_carry_teamability: 6
-      m_ibs_low_carry_communication: 6
-      m_ibs_land_portage_physicality: 6
-      m_ibs_land_portage_teamability: 6
-      m_ibs_land_portage_communication: 6
-    metric_ids:
-      - m_ibs_low_carry_physicality
-      - m_ibs_low_carry_teamability
-      - m_ibs_low_carry_communication
-      - m_ibs_land_portage_physicality
-      - m_ibs_land_portage_teamability
-      - m_ibs_land_portage_communication
-
-  - evolution_id: evo_pool_1
-    display_name: "Pool #1"
-    sheet_name: "Pool 1"
+  - evolution_id: evo_water_comp
+    display_name: "Water Competency"
+    sheet_name: "Water Comp."
     metric_ids:
       - m_underwater_knot_tying
       - m_gear_ditch_and_don
       - m_knot_tying_comments
       - m_ditch_and_don_comments
-      - m_25m_uw_swim
+      - m_35m_uw_swim
+      - m_weighted_tread
+      - m_lock_and_bucket
+      - m_boat_crew_tread
 
   - evolution_id: evo_ruck_run
     display_name: "4.5 Mile Ruck Run"
@@ -102,13 +187,6 @@ evolutions:
       - m_final_team_event_teamability
       - m_final_team_event_communication
 
-  - evolution_id: evo_pool_2
-    display_name: "Pool #2"
-    sheet_name: "Pool 2"
-    metric_ids:
-      - m_boat_crew_tread
-      - m_weighted_tread
-
   - evolution_id: evo_ibs_pt
     display_name: "IBS PT / Land Portage / Land Portage Races"
     sheet_name: "IBS PT Land Portage Races"
@@ -127,20 +205,4 @@ evolutions:
       - m_ibs_land_portage_teamability
       - m_ibs_land_portage_communication
 
-  - evolution_id: evo_log_pt_2
-    display_name: "Log PT #2"
-    sheet_name: "Log PT 2"
-    metric_occurrences:
-      m_log_pt_physicality: 6
-      m_log_pt_teamability: 6
-    metric_ids:
-      - m_log_pt_physicality
-      - m_log_pt_teamability
 
-  - evolution_id: evo_down_man_drills
-    display_name: "Down Man Drills"
-    sheet_name: "Down Man Drills"
-    metric_occurrences:
-      m_down_man: 6
-    metric_ids:
-      - m_down_man

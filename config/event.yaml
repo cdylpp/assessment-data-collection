@@ -1,0 +1,29 @@
+version: 1.0
+registry_name: soac_events
+
+events: 
+  - id: soac_fy_2026_block1
+    name: "SOAC FY 2026"
+    evolutions:
+      - [evo_pst]
+      - [evo_5_mile_run]
+      - [evo_grit_pt, "Grit PT #1"]
+      - [evo_face_mask_apprec]
+      - [evo_ibs_low_carry]
+      - [evo_ibs_surf_passage]
+      - [evo_scenarios]
+      - [evo_teach_backs]
+      - [evo_ocourse]
+      - [evo_log_pt]
+      - [evo_open_args]
+      - [evo_ibs_land_portage, "IBS Land Portage #1"]
+      - [evo_down_man_drills]
+      - [evo_grit_pt, "Grit PT #2"]
+      - [evo_ruck_run]
+      - [evo_pool_swim]
+      - [evo_grit_pt, "Grit PT #3"]
+      - [evo_grit_pt, "Grit PT #4"]
+      - [evo_log_pt, "Log Carry around O Course"]
+      - [evo_ibs_land_portage, "IBS Land Portage #2"]
+      - [evo_grit_pt, "Grit PT #5"]
+      - [evo_water_comp]

@@ -6,6 +6,7 @@ spreadsheet_keyword: record
 files:
   metrics: config/metrics.yaml
   evolutions: config/evolutions.yaml
+  events: config/event.yaml
   roster: config/roster.csv
   master: config/master-config.yaml
 
@@ -45,6 +46,22 @@ domains:
   recommendation: ["Not Recommended", "Recommended", "Strongly Recommended"]
   pass_fail: [Pass, Fail]
   subjective: [0, 1, 2, 3, 4]
+  ocourse: [
+    "Parallel Bars",
+    "Low Wall",
+    "High Wall",
+    "Low Crawl",
+    "Cargo Net",
+    "Balance Logs",
+    "Rope Transfer",
+    "Dirty Name",
+    "Weaver",
+    "Berma Bridge",
+    "Slide for Life",
+    "Rope Swing",
+    "Spider Wall",
+    "Vaults"
+  ]
 
 validation:
   supported_transform_ops:

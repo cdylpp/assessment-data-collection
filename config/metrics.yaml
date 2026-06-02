@@ -26,6 +26,26 @@ metrics:
     min_pass: 10
     input_kind: measured
 
+  - metric_id: m_ocourse_time
+    display_name: O Course Time
+    type: timed
+    unit: seconds
+    input_kind: measured
+    excel_input:
+      entry_style: mm_ss
+
+  - metric_id: m_ocourse_pass_fail
+    display_name: O Course Pass/Fail
+    type: categorical
+    domain_ref: pass_fail
+    input_kind: evaluator
+
+  - metric_id: m_ocourse_fail
+    display_name: Failed obstacle
+    type: categorical
+    domain_ref: ocourse
+    input_kind: evaluator
+
   - metric_id: m_run_time_seconds
     display_name: Run - Time (mm:ss.0)
     type: timed
@@ -46,6 +66,12 @@ metrics:
 
   - metric_id: m_25m_uw_swim
     display_name: 25M Underwater Swim
+    type: categorical
+    domain_ref: pass_fail
+    input_kind: evaluator
+
+  - metric_id: m_35m_uw_swim
+    display_name: 35M Underwater Swim
     type: categorical
     domain_ref: pass_fail
     input_kind: evaluator
@@ -118,6 +144,13 @@ metrics:
     domain_ref: subjective
     input_kind: evaluator
 
+  - metric_id: m_log_pt_communication
+    display_name: Log PT - Communication
+    type: integer
+    unit: score
+    domain_ref: subjective
+    input_kind: evaluator
+
   - metric_id: m_ibs_land_portage_physicality
     display_name: IBS Land Portage - Physicality
     type: integer
@@ -139,12 +172,77 @@ metrics:
     domain_ref: subjective
     input_kind: evaluator
 
+  - metric_id: m_ibs_surf_passage_physicality
+    display_name: IBS Surf Passage - Physicality
+    type: integer
+    unit: score
+    domain_ref: subjective
+    input_kind: evaluator
+
+  - metric_id: m_ibs_surf_passage_teamability
+    display_name: IBS Surf Passage - Teamability
+    type: integer
+    unit: score
+    domain_ref: subjective
+    input_kind: evaluator
+
+  - metric_id: m_ibs_surf_passage_communication
+    display_name: IBS Surf Passage - Communication
+    type: integer
+    unit: score
+    domain_ref: subjective
+    input_kind: evaluator
+
   - metric_id: m_down_man
     display_name: Down Man - Physicality
     type: integer
     unit: score
     domain_ref: subjective
     input_kind: evaluator
+
+  - metric_id: m_grit_pt_physicality
+    display_name: Grit PT - Physicality
+    type: integer
+    unit: score
+    domain_ref: subjective
+    input_kind: evaluator
+
+  - metric_id: m_grit_pt_communication
+    display_name: Grit PT - Communication
+    type: integer
+    unit: score
+    domain_ref: subjective
+    input_kind: evaluator
+
+  - metric_id: m_grit_pt_teamability
+    display_name: Grit PT - Teamability
+    type: integer
+    unit: score
+    domain_ref: subjective
+    input_kind: evaluator
+
+  - metric_id: m_lock_and_bucket
+    display_name: Lock and Bucket
+    type: categorical
+    domain_ref: pass_fail
+    input_kind: evaluator
+
+  - metric_id: m_teach_backs
+    display_name: Teach Backs - Communication
+    type: integer
+    unit: score
+    domain_ref: subjective
+    input_kind: evaluator
+
+  - metric_id: m_face_mask_apprec
+    display_name: Face Mask Appreciation
+    type: integer
+    unit: score
+    domain_ref: subjective
+    input_kind: evaluator
+
+
+  
 
   # --- Legacy metrics retained for backward compatibility ---
   # Improvement: mark a formal deprecation date per legacy metric in future versions.

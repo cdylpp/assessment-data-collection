@@ -18,6 +18,9 @@ from openpyxl.utils import get_column_letter
 from openpyxl.workbook.defined_name import DefinedName
 from openpyxl.worksheet.datavalidation import DataValidation
 
+from event_resolver import EventResolver
+from objects import AssessmentConfig, WorkbookGenerationPlan
+
 
 HEADER_FILL = PatternFill(fill_type="solid", fgColor="D9E1F2")
 HEADER_FONT = Font(bold=True)
@@ -98,6 +101,7 @@ class TemplateGenerationRequest:
     block_number: str = "TBD"
     fiscal_year: str = "TBD"
     entry_rows: int = DEFAULT_ENTRY_ROWS
+    event_id: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -111,6 +115,9 @@ class LoadedTemplateConfig:
     evolutions_doc: Dict[str, Any]
     roster_rows: List[Dict[str, str]]
     metrics_by_id: Dict[str, Dict[str, Any]]
+    events_path: Optional[Path] = None
+    events_doc: Optional[Dict[str, Any]] = None
+    assessment_config: Optional[AssessmentConfig] = None
 
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
@@ -148,6 +155,11 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         default=DEFAULT_ENTRY_ROWS,
         help="How many editable candidate rows to pre-unlock in each evolution sheet.",
     )
+    parser.add_argument(
+        "--event-id",
+        default=None,
+        help="Optional event_id from events YAML to use when generating sheets.",
+    )
     return parser.parse_args(argv)
 
 
@@ -159,6 +171,7 @@ def request_from_namespace(args: argparse.Namespace) -> TemplateGenerationReques
         block_number=args.block_number,
         fiscal_year=args.fiscal_year,
         entry_rows=args.entry_rows,
+        event_id=args.event_id,
     )
 
 
@@ -459,10 +472,14 @@ def evolution_metric_occurrence_map(evolution: Mapping[str, Any]) -> Dict[str, i
 
 
 def evolution_metric_ids(evolution: Mapping[str, Any]) -> List[str]:
-    raw_metric_ids = evolution.get("metric_ids", [])
-    if not isinstance(raw_metric_ids, list) or not raw_metric_ids:
+    raw_metric_ids = evolution.get("metric_ids")
+    if raw_metric_ids is None and "metric_id" in evolution:
+        raw_metric_ids = evolution.get("metric_id")
+    if raw_metric_ids is None:
+        raw_metric_ids = []
+    if not isinstance(raw_metric_ids, list):
         raise ValueError(
-            "Evolution '{0}' has no metric_ids".format(
+            "Evolution '{0}' metric_ids must be a list".format(
                 evolution.get("evolution_id", "unknown")
             )
         )
@@ -570,7 +587,7 @@ def candidate_comment_text(
     if not display_name:
         display_name = "Candidate row {0}".format(row_idx)
 
-    return "Candidate: {0}".format(
+    return "Candidate: {0}\nSource cells: {1}".format(
         display_name,
         ", ".join(source_refs) if source_refs else "roster columns",
     )
@@ -633,25 +650,6 @@ def validate_contract(
     if not isinstance(domains, dict):
         raise ValueError("config.yaml 'domains' must be a mapping")
 
-    for metric_id, metric in metrics_by_id.items():
-        domain_ref = metric.get("domain_ref")
-        if domain_ref and domain_ref not in domains:
-            raise ValueError(
-                "Metric '{0}' references unknown domain '{1}'".format(
-                    metric_id, domain_ref
-                )
-            )
-
-        derived_from = metric.get("derived_from", [])
-        if derived_from:
-            for dependency in derived_from:
-                if dependency not in metrics_by_id:
-                    raise ValueError(
-                        "Metric '{0}' references unknown derived input '{1}'".format(
-                            metric_id, dependency
-                        )
-                    )
-
     evolutions = evolutions_doc.get("evolutions")
     if not isinstance(evolutions, list) or not evolutions:
         raise ValueError("evolutions.yaml must contain a non-empty 'evolutions' list")
@@ -666,9 +664,15 @@ def validate_contract(
         seen_evolutions.add(str(evolution_id))
 
         occurrence_map = evolution_metric_occurrence_map(evolution)
-        raw_metric_ids = evolution.get("metric_ids", [])
-        if not isinstance(raw_metric_ids, list) or not raw_metric_ids:
-            raise ValueError("Evolution '{0}' has no metric_ids".format(evolution_id))
+        raw_metric_ids = evolution.get("metric_ids")
+        if raw_metric_ids is None and "metric_id" in evolution:
+            raw_metric_ids = evolution.get("metric_id")
+        if raw_metric_ids is None:
+            raw_metric_ids = []
+        if not isinstance(raw_metric_ids, list):
+            raise ValueError(
+                "Evolution '{0}' metric_ids must be a list".format(evolution_id)
+            )
 
         configured_metric_ids = set(str(metric_id) for metric_id in raw_metric_ids)
         for metric_id in occurrence_map:
@@ -678,16 +682,11 @@ def validate_contract(
                     "that is not listed in metric_ids".format(evolution_id, metric_id)
                 )
 
-        for metric_id in evolution_metric_ids(evolution):
-            if metric_id not in metrics_by_id:
-                raise ValueError(
-                    "Evolution '{0}' references unknown metric_id '{1}'".format(
-                        evolution_id, metric_id
-                    )
-                )
 
 
 def validate_generation_inputs(loaded: LoadedTemplateConfig) -> None:
+    from evaluator import Evaluator
+
     files = loaded.config_doc.get("files", {})
     if files is None:
         files = {}
@@ -711,6 +710,11 @@ def validate_generation_inputs(loaded: LoadedTemplateConfig) -> None:
         metrics_by_id=loaded.metrics_by_id,
         evolutions_doc=loaded.evolutions_doc,
     )
+    Evaluator(
+        metrics_doc=loaded.metrics_doc,
+        evolutions_doc=loaded.evolutions_doc,
+        events_doc=loaded.events_doc,
+    ).evaluate().raise_for_errors()
 
 
 def load_generation_inputs(
@@ -732,6 +736,14 @@ def load_generation_inputs(
     evolutions_path = resolve_path(
         config_path, files.get("evolutions", "config/evolutions.yaml")
     )
+    events_path = None  # type: Optional[Path]
+    events_candidate = files.get("events", files.get("event"))
+    if events_candidate:
+        events_path = resolve_path(config_path, events_candidate)
+    else:
+        default_events_path = resolve_path(config_path, "config/event.yaml")
+        if default_events_path.exists():
+            events_path = default_events_path
     roster_path = request.roster_path
     if roster_path is None:
         roster_candidate = files.get("roster")
@@ -740,9 +752,16 @@ def load_generation_inputs(
 
     metrics_doc = load_yaml(metrics_path)
     evolutions_doc = load_yaml(evolutions_path)
+    events_doc = load_yaml(events_path) if events_path and events_path.exists() else None
     uid_config = configured_roster_uid(config_doc)
     roster_rows = load_roster(roster_path, uid_config=uid_config)
     metrics_by_id = build_metric_index(metrics_doc)
+    assessment_config = AssessmentConfig.from_documents(
+        config_doc=config_doc,
+        metrics_doc=metrics_doc,
+        evolutions_doc=evolutions_doc,
+        events_doc=events_doc,
+    )
 
     loaded = LoadedTemplateConfig(
         config_path=config_path,
@@ -754,6 +773,9 @@ def load_generation_inputs(
         evolutions_doc=evolutions_doc,
         roster_rows=roster_rows,
         metrics_by_id=metrics_by_id,
+        events_path=events_path,
+        events_doc=events_doc,
+        assessment_config=assessment_config,
     )
     validate_generation_inputs(loaded)
     return loaded
@@ -973,10 +995,24 @@ def evolution_sheet_name(evolution: Mapping[str, Any]) -> str:
     return "Evolution"
 
 
+def metric_definition_for_column(
+    metric_id: str, metrics_by_id: Mapping[str, Mapping[str, Any]]
+) -> Mapping[str, Any]:
+    metric = metrics_by_id.get(metric_id)
+    if metric is not None:
+        return metric
+    return {
+        "metric_id": metric_id,
+        "display_name": metric_id,
+        "type": "text",
+        "input_kind": "undefined",
+    }
+
+
 def create_evolution_sheets(
     wb: Workbook,
     config_doc: Mapping[str, Any],
-    evolutions_doc: Mapping[str, Any],
+    generation_plan: WorkbookGenerationPlan,
     metrics_by_id: Mapping[str, Mapping[str, Any]],
     roster_rows: List[Dict[str, str]],
     sheet_contract: Mapping[str, Any],
@@ -1017,7 +1053,8 @@ def create_evolution_sheets(
     candidate_row_end = first_candidate_row + candidate_row_count - 1
     add_candidate_comments = candidate_name_comments_enabled(config_doc)
 
-    for evolution in evolutions_doc["evolutions"]:
+    for evolution_instance in generation_plan.instances:
+        evolution = evolution_instance.to_evolution_mapping()
         ws = wb.create_sheet(evolution_sheet_name(evolution))
 
         metric_columns = evolution_metric_columns(evolution)
@@ -1075,9 +1112,8 @@ def create_evolution_sheets(
             header_fill = metric_styles.get(
                 column.metric_id, (HEADER_FILL, WHITE_FILL, WHITE_FILL)
             )[0]
-            display_name = str(
-                metrics_by_id[column.metric_id].get("display_name", column.metric_id)
-            )
+            metric = metric_definition_for_column(column.metric_id, metrics_by_id)
+            display_name = str(metric.get("display_name", column.metric_id))
 
             for col_idx in range(group_start_col, group_end_col + 1):
                 for row_idx in range(header_row, occurrence_label_row + 1):
@@ -1129,28 +1165,29 @@ def create_evolution_sheets(
             for col_idx, field in enumerate(roster_fields, start=1):
                 ws.cell(row=row_idx, column=col_idx, value=roster.get(field, ""))
 
-        ws.cell(row=1, column=meta_start_col, value="evolution_id").font = HEADER_FONT
-        ws.cell(row=1, column=meta_start_col + 1, value=evolution["evolution_id"])
-        ws.cell(row=2, column=meta_start_col, value="block_number").font = HEADER_FONT
-        ws.cell(row=2, column=meta_start_col + 1, value=block_number)
-        ws.cell(
-            row=first_candidate_row, column=meta_start_col, value="fiscal_year"
-        ).font = HEADER_FONT
-        ws.cell(row=first_candidate_row, column=meta_start_col + 1, value=fiscal_year)
-        ws.cell(row=1, column=meta_start_col).protection = Protection(locked=True)
-        ws.cell(row=1, column=meta_start_col + 1).protection = Protection(locked=True)
-        ws.cell(row=2, column=meta_start_col).protection = Protection(locked=True)
-        ws.cell(row=2, column=meta_start_col + 1).protection = Protection(locked=True)
-        ws.cell(row=first_candidate_row, column=meta_start_col).protection = Protection(
-            locked=True
-        )
-        ws.cell(
-            row=first_candidate_row, column=meta_start_col + 1
-        ).protection = Protection(locked=True)
+        metadata_rows = [
+            ("evolution_id", evolution.get("evolution_id")),
+            ("event_id", evolution.get("event_id")),
+            ("event_name", evolution.get("event_name")),
+            ("event_instance_id", evolution.get("event_instance_id")),
+            ("event_occurrence_index", evolution.get("event_occurrence_index")),
+            ("event_occurrence_count", evolution.get("event_occurrence_count")),
+            ("block_number", block_number),
+            ("fiscal_year", fiscal_year),
+        ]
+        for metadata_row, (key, value) in enumerate(metadata_rows, start=1):
+            ws.cell(row=metadata_row, column=meta_start_col, value=key).font = HEADER_FONT
+            ws.cell(row=metadata_row, column=meta_start_col + 1, value=value)
+            ws.cell(row=metadata_row, column=meta_start_col).protection = Protection(
+                locked=True
+            )
+            ws.cell(row=metadata_row, column=meta_start_col + 1).protection = Protection(
+                locked=True
+            )
 
         for offset, column in enumerate(metric_columns):
             col_idx = metric_start_col + offset
-            metric = metrics_by_id[column.metric_id]
+            metric = metric_definition_for_column(column.metric_id, metrics_by_id)
             add_data_validations(
                 ws=ws,
                 metric=metric,
@@ -1235,10 +1272,20 @@ def build_workbook(
     domain_named_ranges = create_lookups_sheet(
         wb=wb, domains=loaded.config_doc.get("domains", {})
     )
+    if loaded.assessment_config is None:
+        loaded_config = AssessmentConfig.from_documents(
+            config_doc=loaded.config_doc,
+            metrics_doc=loaded.metrics_doc,
+            evolutions_doc=loaded.evolutions_doc,
+            events_doc=loaded.events_doc,
+        )
+    else:
+        loaded_config = loaded.assessment_config
+    generation_plan = EventResolver(loaded_config).resolve(event_id=request.event_id)
     create_evolution_sheets(
         wb=wb,
         config_doc=loaded.config_doc,
-        evolutions_doc=loaded.evolutions_doc,
+        generation_plan=generation_plan,
         metrics_by_id=loaded.metrics_by_id,
         roster_rows=loaded.roster_rows,
         sheet_contract=loaded.config_doc.get("sheet_contract", {}),
