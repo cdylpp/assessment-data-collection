@@ -11,6 +11,9 @@ files:
   master: config/master-config.yaml
 
 # These are the candidate columns pinned on the left of every evolution sheet.
+# mode: generated, existing
+# `generated` requires `key_columns`
+# `existing` requires `source_column`
 roster_contract:
   uid:
     mode: generated
@@ -25,9 +28,9 @@ roster_contract:
 
 sheet_contract:
   locked_left_columns:
-    - uid
     - first
     - last
+    - cohort
   freeze_panes: D3
   header_row: 1
   metric_id_row: 2  # TODO: Show where to hide code

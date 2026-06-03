@@ -15,6 +15,7 @@ from template_generator import (
     HEADER_FONT,
     LoadedTemplateConfig,
     TemplateGenerationRequest,
+    configured_locked_left_columns,
     load_generation_inputs,
     load_yaml,
     resolve_path,
@@ -438,10 +439,45 @@ def validate_node_workbook_meta(
 
 def configured_roster_fields(loaded: LoadedMasterConfig) -> List[str]:
     sheet_contract = loaded.template.config_doc.get("sheet_contract", {})
-    configured = sheet_contract.get("locked_left_columns", ["uid", "first", "last"])
-    return ["uid", "first", "last"] + [
-        field for field in configured if field not in {"uid", "first", "last"}
-    ]
+    return configured_locked_left_columns(sheet_contract)
+
+
+def all_configured_roster_fields(loaded: LoadedMasterConfig) -> List[str]:
+    sheet_contract = loaded.template.config_doc.get("sheet_contract", {})
+    roster_fields = configured_locked_left_columns(sheet_contract)
+    for evolution in loaded.template.evolutions_doc.get("evolutions", []):
+        if not isinstance(evolution, dict):
+            continue
+        for field_name in configured_locked_left_columns(sheet_contract, evolution):
+            if field_name not in roster_fields:
+                roster_fields.append(field_name)
+    return roster_fields
+
+
+def fallback_roster_row(
+    *,
+    loaded: LoadedMasterConfig,
+    row_index: int,
+    first_candidate_row: int,
+) -> Mapping[str, Any]:
+    roster_index = row_index - first_candidate_row
+    if 0 <= roster_index < len(loaded.template.roster_rows):
+        return loaded.template.roster_rows[roster_index]
+    return {}
+
+
+def read_candidate_roster_value(
+    *,
+    ws: Any,
+    row_index: int,
+    field_name: str,
+    roster_columns: Mapping[str, int],
+    fallback_row: Mapping[str, Any],
+) -> Any:
+    column_index = roster_columns.get(field_name)
+    if column_index is not None:
+        return read_candidate_cell(ws, row_index, column_index)
+    return fallback_row.get(field_name)
 
 
 def sheet_row_range(ws: Any, start_row: int) -> range:
@@ -550,7 +586,7 @@ def ingest_node_workbook(
         )
 
         default_null_rule = loaded.master_doc.get("defaults", {}).get("null_rule", {})
-        roster_fields = configured_roster_fields(loaded)
+        roster_fields = all_configured_roster_fields(loaded)
         sheet_contract = loaded.template.config_doc.get("sheet_contract", {})
         configured_metric_id_row = int(sheet_contract.get("metric_id_row", 2))
         configured_first_candidate_row = int(
@@ -586,28 +622,25 @@ def ingest_node_workbook(
                 metric_id_row=metric_id_row,
                 roster_fields=roster_fields,
             )
-            missing_roster_fields = [
-                field for field in ("uid", "first", "last") if field not in roster_columns
-            ]
-            if missing_roster_fields:
-                raise ValueError(
-                    "Workbook {0} sheet '{1}' is missing roster machine headers for {2}".format(
-                        workbook_path,
-                        sheet_name,
-                        ", ".join(missing_roster_fields),
-                    )
-                )
-
             for row_index in sheet_row_range(ws, first_candidate_row):
+                roster_fallback = fallback_roster_row(
+                    loaded=loaded,
+                    row_index=row_index,
+                    first_candidate_row=first_candidate_row,
+                )
                 uid_value = normalize_null_like(
-                    read_candidate_cell(ws, row_index, roster_columns["uid"]),
+                    read_candidate_roster_value(
+                        ws=ws,
+                        row_index=row_index,
+                        field_name="uid",
+                        roster_columns=roster_columns,
+                        fallback_row=roster_fallback,
+                    ),
                     default_null_rule,
                 )
                 if uid_value is None:
                     continue
 
-                first_value = read_candidate_cell(ws, row_index, roster_columns["first"])
-                last_value = read_candidate_cell(ws, row_index, roster_columns["last"])
                 key = (
                     str(uid_value),
                     str(meta.get("block_number", "")),
@@ -615,27 +648,24 @@ def ingest_node_workbook(
                 )
                 bucket = buckets.setdefault(key, CandidateAccumulator())
 
-                accumulate_source_value(
-                    bucket=bucket,
-                    kind="roster_field",
-                    field_name="uid",
-                    value=uid_value,
-                    null_rule=default_null_rule,
-                )
-                accumulate_source_value(
-                    bucket=bucket,
-                    kind="roster_field",
-                    field_name="first",
-                    value=first_value,
-                    null_rule=default_null_rule,
-                )
-                accumulate_source_value(
-                    bucket=bucket,
-                    kind="roster_field",
-                    field_name="last",
-                    value=last_value,
-                    null_rule=default_null_rule,
-                )
+                available_roster_fields = []
+                for field_name in ["uid", "first", "last"] + list(roster_fields):
+                    if field_name not in available_roster_fields:
+                        available_roster_fields.append(field_name)
+                for field_name in available_roster_fields:
+                    accumulate_source_value(
+                        bucket=bucket,
+                        kind="roster_field",
+                        field_name=field_name,
+                        value=read_candidate_roster_value(
+                            ws=ws,
+                            row_index=row_index,
+                            field_name=field_name,
+                            roster_columns=roster_columns,
+                            fallback_row=roster_fallback,
+                        ),
+                        null_rule=default_null_rule,
+                    )
                 accumulate_source_value(
                     bucket=bucket,
                     kind="meta_field",

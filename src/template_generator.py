@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 import hashlib
 from pathlib import Path
 import re
-from typing import Any, Dict, List, Mapping, Optional, Set, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 import yaml
 from openpyxl import Workbook
@@ -77,6 +77,7 @@ TABLE_BORDER = Border(
 COMMENT_AUTHOR = "Assessment Template"
 DEFAULT_ENTRY_ROWS = 200
 DEFAULT_CONFIG_PATH = "config/config.yaml"
+DEFAULT_LOCKED_LEFT_COLUMNS = ["uid", "first", "last"]
 
 
 @dataclass(frozen=True)
@@ -277,6 +278,69 @@ def configured_roster_uid(config_doc: Mapping[str, Any]) -> RosterUidConfig:
     )
 
 
+def configured_locked_left_columns(
+    sheet_contract: Mapping[str, Any],
+    evolution: Optional[Mapping[str, Any]] = None,
+) -> List[str]:
+    raw_columns = None
+    if evolution is not None:
+        evolution_contract = evolution.get("sheet_contract")
+        if evolution_contract is not None:
+            if not isinstance(evolution_contract, dict):
+                raise ValueError(
+                    "Evolution '{0}' sheet_contract must be a mapping".format(
+                        evolution.get("evolution_id", "unknown")
+                    )
+                )
+            raw_columns = evolution_contract.get("locked_left_columns")
+        elif "locked_left_columns" in evolution:
+            raw_columns = evolution.get("locked_left_columns")
+
+    if raw_columns is None:
+        raw_columns = sheet_contract.get(
+            "locked_left_columns", DEFAULT_LOCKED_LEFT_COLUMNS
+        )
+    if not isinstance(raw_columns, list):
+        raise ValueError("'locked_left_columns' must be a list")
+
+    columns = []  # type: List[str]
+    for value in raw_columns:
+        field = str(value)
+        if field not in columns:
+            columns.append(field)
+    return columns
+
+
+def configured_required_roster_columns(config_doc: Mapping[str, Any]) -> List[str]:
+    sheet_contract = config_doc.get("sheet_contract", {})
+    if sheet_contract is None:
+        sheet_contract = {}
+    if not isinstance(sheet_contract, dict):
+        raise ValueError("config.yaml 'sheet_contract' must be a mapping")
+
+    roster_contract = config_doc.get("roster_contract", {})
+    if roster_contract is None:
+        roster_contract = {}
+    if not isinstance(roster_contract, dict):
+        raise ValueError("config.yaml 'roster_contract' must be a mapping")
+
+    raw_required_fields = roster_contract.get("required_fields", [])
+    if raw_required_fields is None:
+        raw_required_fields = []
+    if not isinstance(raw_required_fields, list):
+        raise ValueError("config.yaml 'roster_contract.required_fields' must be a list")
+
+    required_fields = []  # type: List[str]
+    for field in configured_locked_left_columns(sheet_contract):
+        if field not in required_fields:
+            required_fields.append(field)
+    for field in raw_required_fields:
+        field_name = str(field)
+        if field_name not in required_fields:
+            required_fields.append(field_name)
+    return required_fields
+
+
 def build_candidate_uid_from_values(values: List[str]) -> str:
     normalized = "|".join(part.strip().casefold() for part in values)
     return hashlib.blake2b(normalized.encode("utf-8"), digest_size=12).hexdigest()
@@ -320,7 +384,9 @@ def normalize_uid_key_value(
 
 
 def load_roster(
-    roster_path: Optional[Path], uid_config: Optional[RosterUidConfig] = None
+    roster_path: Optional[Path],
+    uid_config: Optional[RosterUidConfig] = None,
+    required_fields: Optional[Sequence[str]] = None,
 ) -> List[Dict[str, str]]:
     if roster_path is None:
         return []
@@ -351,6 +417,14 @@ def load_roster(
             required_columns.append(str(uid_config.source_column))
         else:
             required_columns.extend(uid_config.key_columns)
+        for field in required_fields or []:
+            if (
+                normalized_config_column(str(field)) == "uid"
+                and uid_config.mode == "generated"
+            ):
+                continue
+            if field not in required_columns:
+                required_columns.append(str(field))
 
         missing_columns = [
             column
@@ -415,7 +489,9 @@ def load_roster(
                     "Duplicate roster uid '{0}' in {1}".format(uid, roster_path)
                 )
             seen_uids.add(uid)
-            rows.append({"uid": uid, "first": first, "last": last, "dob": dob})
+            output_row = dict(cleaned)
+            output_row.update({"uid": uid, "first": first, "last": last, "dob": dob})
+            rows.append(output_row)
     return rows
 
 
@@ -754,7 +830,11 @@ def load_generation_inputs(
     evolutions_doc = load_yaml(evolutions_path)
     events_doc = load_yaml(events_path) if events_path and events_path.exists() else None
     uid_config = configured_roster_uid(config_doc)
-    roster_rows = load_roster(roster_path, uid_config=uid_config)
+    roster_rows = load_roster(
+        roster_path,
+        uid_config=uid_config,
+        required_fields=configured_required_roster_columns(config_doc),
+    )
     metrics_by_id = build_metric_index(metrics_doc)
     assessment_config = AssessmentConfig.from_documents(
         config_doc=config_doc,
@@ -1021,14 +1101,6 @@ def create_evolution_sheets(
     entry_rows: int,
     domain_named_ranges: Mapping[str, str],
 ) -> None:
-    configured_roster_fields = sheet_contract.get(
-        "locked_left_columns", ["uid", "first", "last"]
-    )
-    roster_fields = ["uid", "first", "last"] + [
-        field
-        for field in configured_roster_fields
-        if field not in {"uid", "first", "last"}
-    ]
     header_row = int(sheet_contract.get("header_row", 1))
     occurrence_label_row = int(sheet_contract.get("metric_id_row", header_row + 1))
     machine_metric_id_row = occurrence_label_row + 1
@@ -1057,6 +1129,7 @@ def create_evolution_sheets(
         evolution = evolution_instance.to_evolution_mapping()
         ws = wb.create_sheet(evolution_sheet_name(evolution))
 
+        roster_fields = configured_locked_left_columns(sheet_contract, evolution)
         metric_columns = evolution_metric_columns(evolution)
         metric_styles = metric_fill_styles(metric_columns)
         roster_headers = {"uid": "UID", "first": "First", "last": "Last"}

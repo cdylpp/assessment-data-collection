@@ -5,7 +5,7 @@ on:
   pull_request:
 
 jobs:
-  phase2-checkpoints:
+  test:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -19,7 +19,6 @@ jobs:
           environment-file: environment.yml
           use-mamba: true
 
-      - name: Run Phase 2 checkpoint suite
+      - name: Run tests
         shell: bash -el {0}
-        run: make phase2-test
-
+        run: make test

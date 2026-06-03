@@ -133,12 +133,15 @@ class TemplateGeneratorSmokeTest(unittest.TestCase):
                 pst = workbook["PST"]
                 self.assertFalse(pst.row_dimensions[2].hidden)
                 self.assertTrue(pst.row_dimensions[3].hidden)
-                self.assertEqual(pst["A3"].value, "uid")
+                self.assertEqual(pst["A3"].value, "first")
+                self.assertEqual(pst["B3"].value, "last")
+                self.assertEqual(pst["C3"].value, "cohort")
                 self.assertEqual(pst["D3"].value, "m_push_ups")
-                self.assertEqual(pst["A4"].value, workbook["ROSTER"]["A2"].value)
+                self.assertEqual(pst["A4"].value, workbook["ROSTER"]["B2"].value)
+                self.assertEqual(pst["C4"].value, "A")
                 self.assertIsNotNone(pst["D4"].comment)
                 self.assertIn("Candidate: Lucas Andrew", pst["D4"].comment.text)
-                self.assertIn("Source cells: $B4, $C4", pst["D4"].comment.text)
+                self.assertIn("Source cells: $A4, $B4", pst["D4"].comment.text)
                 self.assertEqual(pst.freeze_panes, "D4")
                 self.assertEqual(pst.row_dimensions[4].height, 30)
                 self.assertEqual(pst.column_dimensions["D"].width, 24)
@@ -276,6 +279,47 @@ class TemplateGeneratorSmokeTest(unittest.TestCase):
             workbook = load_workbook(generated_path)
             try:
                 self.assertIsNone(workbook["PST"]["D4"].comment)
+            finally:
+                workbook.close()
+
+    def test_evolution_can_override_locked_left_columns(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            config_dir = temp_root / "config"
+            config_dir.mkdir()
+            evolutions_path = config_dir / "evolutions.yaml"
+            config_doc = load_yaml(REPO_ROOT / "config" / "config.yaml")
+            evolutions_doc = load_yaml(REPO_ROOT / "config" / "evolutions.yaml")
+            evolutions_doc["evolutions"][0]["sheet_contract"] = {
+                "locked_left_columns": ["uid", "first", "last"]
+            }
+            evolutions_path.write_text(
+                yaml.safe_dump(evolutions_doc), encoding="utf-8"
+            )
+            config_doc["files"] = {
+                "metrics": str((REPO_ROOT / "config" / "metrics.yaml").resolve()),
+                "evolutions": str(evolutions_path.resolve()),
+                "roster": str((REPO_ROOT / "config" / "roster.csv").resolve()),
+                "master": str((REPO_ROOT / "config" / "master-config.yaml").resolve()),
+            }
+            config_path = config_dir / "config.yaml"
+            config_path.write_text(yaml.safe_dump(config_doc), encoding="utf-8")
+            output_path = temp_root / "override.xlsx"
+
+            generated_path = generate_template_workbook(
+                TemplateGenerationRequest(
+                    config_path=config_path,
+                    output_path=output_path,
+                    block_number="B01",
+                    fiscal_year="2026",
+                    entry_rows=10,
+                )
+            )
+
+            workbook = load_workbook(generated_path)
+            try:
+                self.assertEqual(workbook["PST"]["A3"].value, "uid")
+                self.assertEqual(workbook["PST"]["D3"].value, "m_push_ups")
             finally:
                 workbook.close()
 

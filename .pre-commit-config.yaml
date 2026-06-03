@@ -8,13 +8,3 @@ repos:
       - id: check-merge-conflict
       - id: check-added-large-files
         args: ["--maxkb=1024"]
-
-  - repo: local
-    hooks:
-      - id: phase2-checkpoints
-        name: phase2-checkpoints
-        entry: python scripts/run_phase2_tests.py
-        language: system
-        pass_filenames: false
-        stages: [pre-push]
-

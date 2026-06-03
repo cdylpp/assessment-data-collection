@@ -1,6 +1,6 @@
-Last,First,DOB
-Andrew,Lucas,2004-12-16
-Adam,Kyle,2002-04-07
-Angle,Watts,2003-12-09
-Achor,Hamilton,2000-12-22
-Baron,Simon,2002-07-24
+Last,First,DOB,Cohort
+Andrew,Lucas,2004-12-16,A
+Adam,Kyle,2002-04-07,A
+Angle,Watts,2003-12-09,B
+Achor,Hamilton,2000-12-22,B
+Baron,Simon,2002-07-24,C
