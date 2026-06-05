@@ -789,7 +789,7 @@ def candidate_comment_text(
     if not display_name:
         display_name = "Candidate row {0}".format(row_idx)
 
-    return "Candidate: {0}\nSource cells: {1}".format(
+    return "Candidate: {0}".format(
         display_name,
         ", ".join(source_refs) if source_refs else "roster columns",
     )
