@@ -27,3 +27,9 @@ events:
       - [evo_ibs_land_portage, "IBS Land Portage #2"]
       - [evo_grit_pt, "Grit PT #5"]
       - [evo_water_comp]
+  - id: soac_fy_2026_block1_panel
+    name: "SOAC FY 2026 Panelist Interview"
+    evolutions:
+    - [evo_panelist_interview]
+    - [evo_psych_interview]
+    - [evo_peer_feedback]

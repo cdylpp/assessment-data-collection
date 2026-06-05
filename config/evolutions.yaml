@@ -205,4 +205,36 @@ evolutions:
       - m_ibs_land_portage_teamability
       - m_ibs_land_portage_communication
 
+  - evolution_id: evo_panelist_interview
+    display_name: "Panelist Interview"
+    sheet_name: "Panelist Interview"
+    metric_occurrences:
+      m_interview_score: 3
+    metric_ids:
+      - m_interview_score
+      - m_interview_panel_remarks
+
+  - evolution_id: evo_psych_interview
+    display_name: "Psych Interview"
+    sheet_name: "Psych Interview"
+    metric_occurrences:
+      m_psych_communication: 3
+      m_psych_integrity: 3
+      m_psych_leadership: 3
+    metric_ids:
+      - m_psych_communication
+      - m_psych_integrity
+      - m_psych_leadership
+      - m_psych_recommendation
+
+  - evolution_id: evo_peer_feedback
+    display_name: "Peer Feedback"
+    sheet_name: "Peer Feedback"
+    metric_occurrences:
+    metric_ids:
+      - m_top5_flag
+      - m_positive_nomination
+      - m_negative_nomination
+      - m_peer_eval_comment
+
 

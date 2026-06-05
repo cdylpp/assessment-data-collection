@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import sys
 import tempfile
 import unittest
@@ -18,10 +19,12 @@ from template_generator import (  # noqa: E402
     RosterUidConfig,
     TemplateGenerationRequest,
     build_candidate_uid_from_values,
+    generate_excel_template,
     generate_template_workbook,
     load_generation_inputs,
     load_yaml,
     load_roster,
+    request_from_namespace,
 )
 from evaluator import Evaluator  # noqa: E402
 from event_resolver import EventResolver  # noqa: E402
@@ -201,6 +204,117 @@ class TemplateGeneratorSmokeTest(unittest.TestCase):
                     )
             finally:
                 workbook.close()
+
+    def test_cli_events_path_can_add_config_based_definitions(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            config_dir = temp_root / "config"
+            event_dir = temp_root / "custom_events"
+            config_dir.mkdir()
+            event_dir.mkdir()
+
+            metrics_path = config_dir / "extra-metrics.yaml"
+            metrics_path.write_text(
+                yaml.safe_dump(
+                    {
+                        "metrics": [
+                            {
+                                "metric_id": "m_custom_score",
+                                "display_name": "Custom Score",
+                                "type": "integer",
+                                "input_kind": "measured",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            evolutions_path = config_dir / "extra-evolutions.yaml"
+            evolutions_path.write_text(
+                yaml.safe_dump(
+                    {
+                        "evolutions": [
+                            {
+                                "evolution_id": "evo_custom",
+                                "display_name": "Custom Evolution",
+                                "sheet_name": "Custom Evolution",
+                                "metric_ids": ["m_custom_score"],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            events_path = event_dir / "events.yaml"
+            events_path.write_text(
+                yaml.safe_dump(
+                    {
+                        "files": {
+                            "metrics": "config/extra-metrics.yaml",
+                            "evolutions": "config/extra-evolutions.yaml",
+                        },
+                        "events": [
+                            {
+                                "id": "custom_event",
+                                "name": "Custom Event",
+                                "evolutions": [["evo_custom"]],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            config_doc = load_yaml(REPO_ROOT / "config" / "config.yaml")
+            config_doc["files"] = {
+                "metrics": str((REPO_ROOT / "config" / "metrics.yaml").resolve()),
+                "evolutions": str((REPO_ROOT / "config" / "evolutions.yaml").resolve()),
+                "roster": str((REPO_ROOT / "config" / "roster.csv").resolve()),
+                "master": str((REPO_ROOT / "config" / "master-config.yaml").resolve()),
+            }
+            config_path = config_dir / "config.yaml"
+            config_path.write_text(yaml.safe_dump(config_doc), encoding="utf-8")
+            output_path = temp_root / "custom_event.xlsx"
+
+            args = argparse.Namespace(
+                config=str(config_path),
+                roster=None,
+                output=str(output_path),
+                events=str(events_path),
+                block_number="B01",
+                fiscal_year="2026",
+                entry_rows=3,
+                event_id="custom_event",
+            )
+            request = request_from_namespace(args)
+            generated_path = generate_template_workbook(request)
+
+            self.assertEqual(request.events_path, events_path.resolve())
+            self.assertTrue(generated_path.exists())
+            loaded = load_generation_inputs(request)
+            self.assertEqual(loaded.events_path, events_path.resolve())
+            self.assertIn("m_custom_score", loaded.metrics_by_id)
+
+            workbook = load_workbook(generated_path)
+            try:
+                self.assertIn("Custom Evolution", workbook.sheetnames)
+                self.assertEqual(
+                    workbook["Custom Evolution"]["D3"].value,
+                    "m_custom_score",
+                )
+            finally:
+                workbook.close()
+
+            generated_by_function = generate_excel_template(
+                config_path=config_path,
+                output_path=temp_root / "custom_event_function.xlsx",
+                events_path=events_path,
+                block_number="B01",
+                fiscal_year="2026",
+                entry_rows=3,
+                event_id="custom_event",
+            )
+            self.assertTrue(generated_by_function.exists())
 
     def test_evaluator_reports_event_and_metric_inconsistencies(self) -> None:
         result = Evaluator(

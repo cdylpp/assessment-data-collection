@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 import hashlib
 from pathlib import Path
 import re
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple, Union
 
 import yaml
 from openpyxl import Workbook
@@ -78,6 +78,7 @@ COMMENT_AUTHOR = "Assessment Template"
 DEFAULT_ENTRY_ROWS = 200
 DEFAULT_CONFIG_PATH = "config/config.yaml"
 DEFAULT_LOCKED_LEFT_COLUMNS = ["uid", "first", "last"]
+PathLike = Union[str, Path]
 
 
 @dataclass(frozen=True)
@@ -99,6 +100,7 @@ class TemplateGenerationRequest:
     config_path: Path
     roster_path: Optional[Path] = None
     output_path: Optional[Path] = None
+    events_path: Optional[Path] = None
     block_number: str = "TBD"
     fiscal_year: str = "TBD"
     entry_rows: int = DEFAULT_ENTRY_ROWS
@@ -141,6 +143,14 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         help="Output xlsx path (default: workbooks/NodeTemplate_v{version}.xlsx).",
     )
     parser.add_argument(
+        "--events",
+        default=None,
+        help=(
+            "Optional events YAML path. Overrides config.yaml files.events and may "
+            "append metrics/evolutions via root definitions or files.* paths."
+        ),
+    )
+    parser.add_argument(
         "--block-number",
         default="TBD",
         help="Block number to stamp in META/evolution sheets.",
@@ -169,6 +179,7 @@ def request_from_namespace(args: argparse.Namespace) -> TemplateGenerationReques
         config_path=Path(args.config).resolve(),
         roster_path=Path(args.roster).resolve() if args.roster else None,
         output_path=Path(args.output).resolve() if args.output else None,
+        events_path=Path(args.events).resolve() if args.events else None,
         block_number=args.block_number,
         fiscal_year=args.fiscal_year,
         entry_rows=args.entry_rows,
@@ -189,6 +200,121 @@ def resolve_path(config_path: Path, candidate: str) -> Path:
     if path_candidate.is_absolute():
         return path_candidate
     return (config_path.parent.parent / path_candidate).resolve()
+
+
+def _path_list_from_yaml(value: Any, label: str) -> List[str]:
+    if value is None:
+        return []
+    raw_values = value if isinstance(value, list) else [value]
+    paths = []  # type: List[str]
+    for raw_value in raw_values:
+        if not isinstance(raw_value, str):
+            raise ValueError(
+                "{0} must be a string path or list of string paths".format(label)
+            )
+        paths.append(raw_value)
+    return paths
+
+
+def event_definition_file_paths(
+    *, config_path: Path, events_doc: Optional[Mapping[str, Any]], definition_key: str
+) -> List[Path]:
+    if events_doc is None:
+        return []
+    files = events_doc.get("files", {})
+    if files is None:
+        return []
+    if not isinstance(files, dict):
+        raise ValueError("events.yaml 'files' must be a mapping")
+
+    return [
+        resolve_path(config_path, candidate)
+        for candidate in _path_list_from_yaml(
+            files.get(definition_key),
+            "events.yaml 'files.{0}'".format(definition_key),
+        )
+    ]
+
+
+def inline_event_definition_doc(
+    events_doc: Optional[Mapping[str, Any]], definition_key: str
+) -> Optional[Dict[str, Any]]:
+    if events_doc is None:
+        return None
+
+    entries = []  # type: List[Any]
+    if definition_key in events_doc:
+        raw_entries = events_doc.get(definition_key)
+        if raw_entries is None:
+            raw_entries = []
+        if not isinstance(raw_entries, list):
+            raise ValueError("events.yaml '{0}' must be a list".format(definition_key))
+        entries.extend(raw_entries)
+
+    definitions = events_doc.get("definitions", {})
+    if definitions is None:
+        definitions = {}
+    if not isinstance(definitions, dict):
+        raise ValueError("events.yaml 'definitions' must be a mapping")
+    if definition_key in definitions:
+        raw_definition_entries = definitions.get(definition_key)
+        if raw_definition_entries is None:
+            raw_definition_entries = []
+        if not isinstance(raw_definition_entries, list):
+            raise ValueError(
+                "events.yaml 'definitions.{0}' must be a list".format(definition_key)
+            )
+        entries.extend(raw_definition_entries)
+
+    if not entries:
+        return None
+    return {definition_key: entries}
+
+
+def merge_event_definition_additions(
+    *,
+    base_doc: Mapping[str, Any],
+    events_doc: Optional[Mapping[str, Any]],
+    config_path: Path,
+    definition_key: str,
+    source_name: str,
+) -> Dict[str, Any]:
+    merged_doc = dict(base_doc)
+    base_entries = merged_doc.get(definition_key)
+    if not isinstance(base_entries, list):
+        raise ValueError(
+            "{0}.yaml must contain a list under '{1}'".format(
+                source_name, definition_key
+            )
+        )
+
+    merged_entries = list(base_entries)
+    extension_docs = [
+        load_yaml(path)
+        for path in event_definition_file_paths(
+            config_path=config_path,
+            events_doc=events_doc,
+            definition_key=definition_key,
+        )
+    ]
+    inline_doc = inline_event_definition_doc(events_doc, definition_key)
+    if inline_doc is not None:
+        extension_docs.append(inline_doc)
+
+    for extension_doc in extension_docs:
+        extension_entries = extension_doc.get(definition_key, [])
+        if extension_entries is None:
+            extension_entries = []
+        if not isinstance(extension_entries, list):
+            raise ValueError(
+                "Additional {0} definitions must contain a list under '{1}'".format(
+                    source_name, definition_key
+                )
+            )
+        merged_entries.extend(extension_entries)
+
+    merged_doc[definition_key] = merged_entries
+    return merged_doc
 
 
 def sanitize_defined_name(name: str) -> str:
@@ -812,23 +938,41 @@ def load_generation_inputs(
     evolutions_path = resolve_path(
         config_path, files.get("evolutions", "config/evolutions.yaml")
     )
-    events_path = None  # type: Optional[Path]
+    explicit_events_path = request.events_path is not None
+    events_path = request.events_path.resolve() if request.events_path else None
     events_candidate = files.get("events", files.get("event"))
-    if events_candidate:
+    if events_path is None and events_candidate:
         events_path = resolve_path(config_path, events_candidate)
     else:
-        default_events_path = resolve_path(config_path, "config/event.yaml")
-        if default_events_path.exists():
-            events_path = default_events_path
+        if events_path is None:
+            default_events_path = resolve_path(config_path, "config/event.yaml")
+            if default_events_path.exists():
+                events_path = default_events_path
     roster_path = request.roster_path
     if roster_path is None:
         roster_candidate = files.get("roster")
         if roster_candidate:
             roster_path = resolve_path(config_path, roster_candidate)
 
-    metrics_doc = load_yaml(metrics_path)
-    evolutions_doc = load_yaml(evolutions_path)
-    events_doc = load_yaml(events_path) if events_path and events_path.exists() else None
+    events_doc = (
+        load_yaml(events_path)
+        if events_path and (explicit_events_path or events_path.exists())
+        else None
+    )
+    metrics_doc = merge_event_definition_additions(
+        base_doc=load_yaml(metrics_path),
+        events_doc=events_doc,
+        config_path=config_path,
+        definition_key="metrics",
+        source_name="metrics",
+    )
+    evolutions_doc = merge_event_definition_additions(
+        base_doc=load_yaml(evolutions_path),
+        events_doc=events_doc,
+        config_path=config_path,
+        definition_key="evolutions",
+        source_name="evolutions",
+    )
     uid_config = configured_roster_uid(config_doc)
     roster_rows = load_roster(
         roster_path,
@@ -1385,6 +1529,31 @@ def generate_template_workbook(request: TemplateGenerationRequest) -> Path:
 
 def generate_workbook(request: TemplateGenerationRequest) -> Path:
     return generate_template_workbook(request)
+
+
+def generate_excel_template(
+    config_path: PathLike = DEFAULT_CONFIG_PATH,
+    *,
+    roster_path: Optional[PathLike] = None,
+    output_path: Optional[PathLike] = None,
+    events_path: Optional[PathLike] = None,
+    block_number: str = "TBD",
+    fiscal_year: str = "TBD",
+    entry_rows: int = DEFAULT_ENTRY_ROWS,
+    event_id: Optional[str] = None,
+) -> Path:
+    return generate_template_workbook(
+        TemplateGenerationRequest(
+            config_path=Path(config_path).resolve(),
+            roster_path=Path(roster_path).resolve() if roster_path else None,
+            output_path=Path(output_path).resolve() if output_path else None,
+            events_path=Path(events_path).resolve() if events_path else None,
+            block_number=block_number,
+            fiscal_year=fiscal_year,
+            entry_rows=entry_rows,
+            event_id=event_id,
+        )
+    )
 
 
 def main(argv: Optional[List[str]] = None) -> int:

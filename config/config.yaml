@@ -28,8 +28,8 @@ roster_contract:
 
 sheet_contract:
   locked_left_columns:
-    - first
     - last
+    - first
     - cohort
   freeze_panes: D3
   header_row: 1
@@ -44,11 +44,12 @@ workbook_ui:
 
 # Controlled vocabulary used by metric.domain_ref.
 domains:
-  nomination: [positive, negative]
-  top5_flag: [0, 1]
-  recommendation: ["Not Recommended", "Recommended", "Strongly Recommended"]
+  nomination: [TRUE, FALSE]
+  top5_flag: [TRUE, FALSE]
+  recommendation: ["Not Recommended", "Recommended with Reservation", "Recommended", "Highly Recommended"]
   pass_fail: [Pass, Fail]
   subjective: [0, 1, 2, 3, 4]
+  interview: [0, 25, 50, 75, 100]
   ocourse: [
     "Parallel Bars",
     "Low Wall",

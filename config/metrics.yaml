@@ -385,8 +385,8 @@ metrics:
 
   - metric_id: m_interview_score
     display_name: Interview Score
-    type: numeric
-    unit: score
+    type: categorical
+    domain_ref: interview
     input_kind: assessment
 
   - metric_id: m_interview_panel_remarks
@@ -433,6 +433,12 @@ metrics:
 
   - metric_id: m_obstacle_course_comments
     display_name: Obstacle Course - Comments
+    type: text
+    unit: text
+    input_kind: evaluator
+
+  - metric_id: m_peer_eval_comment
+    display_name: Peer Eval Comments
     type: text
     unit: text
     input_kind: evaluator
