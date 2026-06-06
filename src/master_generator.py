@@ -4,6 +4,7 @@ import argparse
 from collections import OrderedDict, defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, DefaultDict, Dict, Iterable, List, Mapping, MutableMapping, Optional, Sequence, Tuple
 
@@ -305,32 +306,79 @@ def normalize_null_like(value: Any, rule: Mapping[str, Any]) -> Any:
     return value
 
 
-def normalize_time_string(raw: str) -> Optional[float]:
+def metric_entry_style(metric: Mapping[str, Any]) -> Optional[str]:
+    excel_input = metric.get("excel_input", {})
+    if not isinstance(excel_input, dict):
+        return None
+    entry_style = excel_input.get("entry_style")
+    return str(entry_style) if entry_style else None
+
+
+def normalize_mm_ss_decimal(value: Decimal) -> Optional[float]:
+    if value < 0:
+        return None
+
+    minutes = int(value)
+    seconds_decimal = (value - Decimal(minutes)) * Decimal(100)
+    if seconds_decimal != seconds_decimal.to_integral_value():
+        return None
+
+    seconds = int(seconds_decimal)
+    if seconds >= 60:
+        return None
+    return float(minutes * 60 + seconds)
+
+
+def normalize_mm_ss_value(value: Any) -> Optional[float]:
+    try:
+        decimal_value = Decimal(str(value).strip())
+    except (InvalidOperation, AttributeError):
+        return None
+    return normalize_mm_ss_decimal(decimal_value)
+
+
+def normalize_time_string(raw: str, entry_style: Optional[str] = None) -> Optional[float]:
     stripped = raw.strip()
     if not stripped:
         return None
+
+    if entry_style == "mm_ss" and "." in stripped:
+        parsed = normalize_mm_ss_value(stripped)
+        if parsed is not None:
+            return parsed
 
     parts = stripped.split(":")
     try:
         if len(parts) == 2:
             minutes = int(parts[0])
             seconds = float(parts[1])
+            if seconds < 0 or seconds >= 60:
+                return None
             return minutes * 60 + seconds
         if len(parts) == 3:
             hours = int(parts[0])
             minutes = int(parts[1])
             seconds = float(parts[2])
+            if minutes < 0 or minutes >= 60 or seconds < 0 or seconds >= 60:
+                return None
             return hours * 3600 + minutes * 60 + seconds
     except ValueError:
         return None
     return None
 
 
-def normalize_timed_value(value: Any) -> Optional[float]:
+def normalize_timed_value(
+    value: Any, entry_style: Optional[str] = None
+) -> Optional[float]:
     if value is None:
         return None
     if isinstance(value, timedelta):
-        return value.total_seconds()
+        total_seconds = value.total_seconds()
+        if entry_style == "mm_ss" and abs(total_seconds) >= 86400:
+            parsed = normalize_mm_ss_value(total_seconds / 86400)
+            if parsed is not None:
+                return parsed
+        return total_seconds
     if isinstance(value, datetime):
         return (
             value.hour * 3600
@@ -346,9 +394,13 @@ def normalize_timed_value(value: Any) -> Optional[float]:
             + value.microsecond / 1_000_000.0
         )
     if isinstance(value, (int, float)):
+        if entry_style == "mm_ss":
+            parsed = normalize_mm_ss_value(value)
+            if parsed is not None:
+                return parsed
         return float(value) * 86400 if abs(float(value)) <= 2 else float(value)
     if isinstance(value, str):
-        parsed = normalize_time_string(value)
+        parsed = normalize_time_string(value, entry_style=entry_style)
         if parsed is not None:
             return parsed
     raise ValueError("Unsupported timed value '{0}'".format(value))
@@ -383,7 +435,7 @@ def normalize_metric_value(
 
     metric_type = metric.get("type")
     if metric_type == "timed":
-        return normalize_timed_value(value)
+        return normalize_timed_value(value, entry_style=metric_entry_style(metric))
     if metric_type == "integer":
         return normalize_numeric_value(value, integer=True)
     if metric_type == "numeric":

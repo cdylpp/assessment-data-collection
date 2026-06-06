@@ -8,6 +8,7 @@ from pathlib import Path
 
 import yaml
 from openpyxl import load_workbook
+from openpyxl.utils import get_column_letter
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -136,18 +137,53 @@ class TemplateGeneratorSmokeTest(unittest.TestCase):
                 pst = workbook["PST"]
                 self.assertFalse(pst.row_dimensions[2].hidden)
                 self.assertTrue(pst.row_dimensions[3].hidden)
-                self.assertEqual(pst["A3"].value, "first")
-                self.assertEqual(pst["B3"].value, "last")
-                self.assertEqual(pst["C3"].value, "cohort")
-                self.assertEqual(pst["D3"].value, "m_push_ups")
-                self.assertEqual(pst["A4"].value, workbook["ROSTER"]["B2"].value)
-                self.assertEqual(pst["C4"].value, "A")
-                self.assertIsNotNone(pst["D4"].comment)
-                self.assertIn("Candidate: Lucas Andrew", pst["D4"].comment.text)
-                self.assertIn("Source cells: $A4, $B4", pst["D4"].comment.text)
+                roster_fields = loaded.config_doc["sheet_contract"][
+                    "locked_left_columns"
+                ]
+                for col_idx, field in enumerate(roster_fields, start=1):
+                    self.assertEqual(pst.cell(row=3, column=col_idx).value, field)
+                    roster_column = {"uid": "A", "first": "B", "last": "C"}.get(field)
+                    if roster_column:
+                        self.assertEqual(
+                            pst.cell(row=4, column=col_idx).value,
+                            workbook["ROSTER"]["{0}2".format(roster_column)].value,
+                        )
+                metric_start_col = len(roster_fields) + 1
+                run_time_col = metric_start_col + 3
+                run_time_col_letter = get_column_letter(run_time_col)
+                first_metric_cell = pst.cell(row=4, column=metric_start_col)
+                self.assertEqual(
+                    pst.cell(row=3, column=metric_start_col).value,
+                    "m_push_ups",
+                )
+                if "cohort" in roster_fields:
+                    cohort_col = roster_fields.index("cohort") + 1
+                    self.assertEqual(pst.cell(row=4, column=cohort_col).value, "A")
+                self.assertIsNotNone(first_metric_cell.comment)
+                self.assertIn("Candidate: Lucas Andrew", first_metric_cell.comment.text)
                 self.assertEqual(pst.freeze_panes, "D4")
+                self.assertEqual(
+                    pst.cell(row=4, column=run_time_col).number_format,
+                    "[mm]:ss",
+                )
+                timed_validations = [
+                    validation
+                    for validation in pst.data_validations.dataValidation
+                    if validation.type == "custom"
+                    and validation.sqref
+                    and "{0}4:{0}13".format(run_time_col_letter)
+                    in str(validation.sqref)
+                ]
+                self.assertEqual(len(timed_validations), 1)
+                self.assertIn(
+                    "MOD({0}4,1)<0.6".format(run_time_col_letter),
+                    timed_validations[0].formula1,
+                )
                 self.assertEqual(pst.row_dimensions[4].height, 30)
-                self.assertEqual(pst.column_dimensions["D"].width, 24)
+                self.assertEqual(
+                    pst.column_dimensions[get_column_letter(metric_start_col)].width,
+                    24,
+                )
                 self.assertNotEqual(
                     pst["D4"].fill.fgColor.rgb,
                     pst["D5"].fill.fgColor.rgb,

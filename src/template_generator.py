@@ -1207,6 +1207,23 @@ def add_data_validations(
     )
 
     if metric_type == "timed":
+        dv = DataValidation(
+            type="custom",
+            formula1=(
+                "=OR("
+                "ISBLANK({0}),"
+                "AND(ISNUMBER({0}),{0}>=0,{0}<1),"
+                "AND(ISNUMBER({0}),{0}=ROUND({0},2),MOD({0},1)<0.6)"
+                ")"
+            ).format(first_cell),
+            allow_blank=True,
+        )
+        dv.promptTitle = "Time Entry"
+        dv.prompt = "Enter time as mm.ss, such as 10.30, or as mm:ss."
+        dv.errorTitle = "Invalid Time"
+        dv.error = "Use mm.ss with seconds from 00 to 59, or enter an Excel time."
+        ws.add_data_validation(dv)
+        dv.add(cell_range)
         for row_idx in range(row_start, row_end + 1):
             ws.cell(row=row_idx, column=col_idx).number_format = "[mm]:ss"
 

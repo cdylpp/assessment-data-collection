@@ -13,7 +13,11 @@ SRC_DIR = REPO_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from master_generator import MasterGenerationRequest, generate_master_workbook  # noqa: E402
+from master_generator import (  # noqa: E402
+    MasterGenerationRequest,
+    generate_master_workbook,
+    normalize_timed_value,
+)
 from template_generator import (  # noqa: E402
     TemplateGenerationRequest,
     generate_template_workbook,
@@ -62,8 +66,8 @@ class MasterGeneratorTest(unittest.TestCase):
             set_sheet_value(node_path, "PST Custom", "D4", 61)
             set_sheet_value(node_path, "PST Custom", "E4", 62)
             set_sheet_value(node_path, "PST Custom", "F4", 13)
-            set_sheet_value(node_path, "PST Custom", "G4", 600 / 86400)
-            set_sheet_value(node_path, "PST Custom", "H4", 720 / 86400)
+            set_sheet_value(node_path, "PST Custom", "G4", 10.30)
+            set_sheet_value(node_path, "PST Custom", "H4", "12.00")
 
             generated_path = generate_master_workbook(
                 MasterGenerationRequest(
@@ -92,10 +96,22 @@ class MasterGeneratorTest(unittest.TestCase):
                 self.assertEqual(ws["H2"].value, 61)
                 self.assertEqual(ws["I2"].value, 62)
                 self.assertEqual(ws["J2"].value, 13)
-                self.assertEqual(ws["K2"].value, 600)
+                self.assertEqual(ws["K2"].value, 630)
                 self.assertEqual(ws["L2"].value, 720)
             finally:
                 workbook.close()
+
+    def test_timed_values_support_mm_ss_entry_style(self) -> None:
+        self.assertEqual(normalize_timed_value(10.30, entry_style="mm_ss"), 630)
+        self.assertEqual(normalize_timed_value("10.30", entry_style="mm_ss"), 630)
+        self.assertEqual(normalize_timed_value("10:30", entry_style="mm_ss"), 630)
+        self.assertEqual(normalize_timed_value(12, entry_style="mm_ss"), 720)
+        self.assertEqual(
+            normalize_timed_value(600 / 86400, entry_style="mm_ss"),
+            600,
+        )
+        with self.assertRaises(ValueError):
+            normalize_timed_value("10.60", entry_style="mm_ss")
 
     def test_aggregate_duplicate_metric_values_across_workbooks(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
