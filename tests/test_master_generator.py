@@ -113,6 +113,57 @@ class MasterGeneratorTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             normalize_timed_value("10.60", entry_style="mm_ss")
 
+    def test_early_exit_rows_are_set_aside(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            node_path = temp_root / "node_a.xlsx"
+            master_path = temp_root / "master.xlsx"
+
+            generate_template_workbook(
+                TemplateGenerationRequest(
+                    config_path=(REPO_ROOT / "config" / "config.yaml").resolve(),
+                    output_path=node_path,
+                    block_number="101",
+                    fiscal_year="2026",
+                    entry_rows=10,
+                )
+            )
+            set_sheet_value(node_path, "PST", "D4", "MED PULL")
+            set_sheet_value(node_path, "PST", "E4", 55)
+            set_sheet_value(node_path, "PST", "D5", 45)
+
+            generated_path = generate_master_workbook(
+                MasterGenerationRequest(
+                    config_path=(REPO_ROOT / "config" / "config.yaml").resolve(),
+                    workbook_paths=[node_path],
+                    output_path=master_path,
+                )
+            )
+
+            workbook = load_workbook(generated_path, data_only=True)
+            try:
+                loaded = load_generation_inputs(
+                    TemplateGenerationRequest(
+                        config_path=(REPO_ROOT / "config" / "config.yaml").resolve()
+                    )
+                )
+                first_roster_row = loaded.roster_rows[0]
+                second_roster_row = loaded.roster_rows[1]
+
+                master_ws = workbook["MASTER"]
+                self.assertEqual(master_ws.max_row, len(loaded.roster_rows))
+                self.assertEqual(master_ws["A2"].value, second_roster_row["uid"])
+                self.assertEqual(master_ws["H2"].value, 45)
+
+                early_exit_ws = workbook["EARLY_EXITS"]
+                self.assertEqual(early_exit_ws.max_row, 2)
+                self.assertEqual(early_exit_ws["A2"].value, first_roster_row["uid"])
+                self.assertEqual(early_exit_ws["F2"].value, "MED PULL")
+                self.assertEqual(early_exit_ws["G2"].value, "node_a.xlsx")
+                self.assertEqual(early_exit_ws["H2"].value, "PST")
+            finally:
+                workbook.close()
+
     def test_aggregate_duplicate_metric_values_across_workbooks(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_root = Path(temp_dir)

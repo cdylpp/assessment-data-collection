@@ -56,6 +56,25 @@ class CandidateAccumulator:
     )
 
 
+@dataclass
+class EarlyExitAccumulator:
+    source_values: DefaultDict[Tuple[str, str], List[Any]] = field(
+        default_factory=lambda: defaultdict(list)
+    )
+    reasons: List[str] = field(default_factory=list)
+    source_workbooks: List[str] = field(default_factory=list)
+    sheet_names: List[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class MasterBuildResult:
+    rows: Sequence[OrderedDict[str, Any]]
+    early_exit_rows: Sequence[OrderedDict[str, Any]]
+
+
+EARLY_EXIT_REASONS = ("MED PULL", "DOR", "ADMIN PULL")
+
+
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Aggregate one or more node workbooks into the master workbook."
@@ -702,7 +721,7 @@ def source_key(kind: str, field_name: str) -> Tuple[str, str]:
 
 def accumulate_source_value(
     *,
-    bucket: CandidateAccumulator,
+    bucket: CandidateAccumulator | EarlyExitAccumulator,
     kind: str,
     field_name: str,
     value: Any,
@@ -710,6 +729,63 @@ def accumulate_source_value(
 ) -> None:
     bucket.source_values[source_key(kind, field_name)].append(
         normalize_null_like(value, null_rule)
+    )
+
+
+def available_source_roster_fields(roster_fields: Sequence[str]) -> List[str]:
+    available_roster_fields = []
+    for field_name in ["uid", "first", "last"] + list(roster_fields):
+        if field_name not in available_roster_fields:
+            available_roster_fields.append(field_name)
+    return available_roster_fields
+
+
+def accumulate_candidate_source_values(
+    *,
+    bucket: CandidateAccumulator | EarlyExitAccumulator,
+    ws: Any,
+    row_index: int,
+    roster_columns: Mapping[str, int],
+    roster_fallback: Mapping[str, Any],
+    roster_fields: Sequence[str],
+    meta: Mapping[str, Any],
+    workbook_path: Path,
+    null_rule: Mapping[str, Any],
+) -> None:
+    for field_name in available_source_roster_fields(roster_fields):
+        accumulate_source_value(
+            bucket=bucket,
+            kind="roster_field",
+            field_name=field_name,
+            value=read_candidate_roster_value(
+                ws=ws,
+                row_index=row_index,
+                field_name=field_name,
+                roster_columns=roster_columns,
+                fallback_row=roster_fallback,
+            ),
+            null_rule=null_rule,
+        )
+    accumulate_source_value(
+        bucket=bucket,
+        kind="meta_field",
+        field_name="block_number",
+        value=meta.get("block_number"),
+        null_rule=null_rule,
+    )
+    accumulate_source_value(
+        bucket=bucket,
+        kind="meta_field",
+        field_name="fiscal_year",
+        value=meta.get("fiscal_year"),
+        null_rule=null_rule,
+    )
+    accumulate_source_value(
+        bucket=bucket,
+        kind="ingestion_metadata",
+        field_name="source_workbook",
+        value=workbook_path.name,
+        null_rule=null_rule,
     )
 
 
@@ -725,6 +801,67 @@ def metric_columns_for_sheet(
         if value in metrics_by_id:
             metric_columns[col_idx] = str(value)
     return metric_columns
+
+
+def normalize_early_exit_reason(value: Any) -> Optional[str]:
+    if not isinstance(value, str):
+        return None
+    normalized = " ".join(value.strip().upper().split())
+    if normalized in EARLY_EXIT_REASONS:
+        return normalized
+    return None
+
+
+def early_exit_reasons_for_row(
+    *,
+    ws: Any,
+    row_index: int,
+    metric_columns: Mapping[int, str],
+) -> List[str]:
+    reasons = []
+    for col_idx in metric_columns:
+        reason = normalize_early_exit_reason(
+            read_candidate_cell(ws, row_index, col_idx)
+        )
+        if reason is not None and reason not in reasons:
+            reasons.append(reason)
+    return reasons
+
+
+def record_early_exit(
+    *,
+    early_exits: MutableMapping[Tuple[str, str, str], EarlyExitAccumulator],
+    key: Tuple[str, str, str],
+    reasons: Sequence[str],
+    ws: Any,
+    row_index: int,
+    roster_columns: Mapping[str, int],
+    roster_fallback: Mapping[str, Any],
+    roster_fields: Sequence[str],
+    meta: Mapping[str, Any],
+    workbook_path: Path,
+    sheet_name: str,
+    null_rule: Mapping[str, Any],
+) -> None:
+    bucket = early_exits.setdefault(key, EarlyExitAccumulator())
+    accumulate_candidate_source_values(
+        bucket=bucket,
+        ws=ws,
+        row_index=row_index,
+        roster_columns=roster_columns,
+        roster_fallback=roster_fallback,
+        roster_fields=roster_fields,
+        meta=meta,
+        workbook_path=workbook_path,
+        null_rule=null_rule,
+    )
+    for reason in reasons:
+        if reason not in bucket.reasons:
+            bucket.reasons.append(reason)
+    if workbook_path.name not in bucket.source_workbooks:
+        bucket.source_workbooks.append(workbook_path.name)
+    if sheet_name not in bucket.sheet_names:
+        bucket.sheet_names.append(sheet_name)
 
 
 def roster_columns_for_sheet(
@@ -783,6 +920,7 @@ def ingest_node_workbook(
     workbook_path: Path,
     loaded: LoadedMasterConfig,
     buckets: MutableMapping[Tuple[str, str, str], CandidateAccumulator],
+    early_exits: MutableMapping[Tuple[str, str, str], EarlyExitAccumulator],
 ) -> None:
     workbook = load_workbook(workbook_path, data_only=True)
     try:
@@ -854,45 +992,42 @@ def ingest_node_workbook(
                     str(meta.get("block_number", "")),
                     str(meta.get("fiscal_year", "")),
                 )
-                bucket = buckets.setdefault(key, CandidateAccumulator())
 
-                available_roster_fields = []
-                for field_name in ["uid", "first", "last"] + list(roster_fields):
-                    if field_name not in available_roster_fields:
-                        available_roster_fields.append(field_name)
-                for field_name in available_roster_fields:
-                    accumulate_source_value(
-                        bucket=bucket,
-                        kind="roster_field",
-                        field_name=field_name,
-                        value=read_candidate_roster_value(
-                            ws=ws,
-                            row_index=row_index,
-                            field_name=field_name,
-                            roster_columns=roster_columns,
-                            fallback_row=roster_fallback,
-                        ),
+                early_exit_reasons = early_exit_reasons_for_row(
+                    ws=ws,
+                    row_index=row_index,
+                    metric_columns=metric_columns,
+                )
+                if early_exit_reasons:
+                    buckets.pop(key, None)
+                    record_early_exit(
+                        early_exits=early_exits,
+                        key=key,
+                        reasons=early_exit_reasons,
+                        ws=ws,
+                        row_index=row_index,
+                        roster_columns=roster_columns,
+                        roster_fallback=roster_fallback,
+                        roster_fields=roster_fields,
+                        meta=meta,
+                        workbook_path=workbook_path,
+                        sheet_name=sheet_name,
                         null_rule=default_null_rule,
                     )
-                accumulate_source_value(
+                    continue
+                if key in early_exits:
+                    continue
+
+                bucket = buckets.setdefault(key, CandidateAccumulator())
+                accumulate_candidate_source_values(
                     bucket=bucket,
-                    kind="meta_field",
-                    field_name="block_number",
-                    value=meta.get("block_number"),
-                    null_rule=default_null_rule,
-                )
-                accumulate_source_value(
-                    bucket=bucket,
-                    kind="meta_field",
-                    field_name="fiscal_year",
-                    value=meta.get("fiscal_year"),
-                    null_rule=default_null_rule,
-                )
-                accumulate_source_value(
-                    bucket=bucket,
-                    kind="ingestion_metadata",
-                    field_name="source_workbook",
-                    value=workbook_path.name,
+                    ws=ws,
+                    row_index=row_index,
+                    roster_columns=roster_columns,
+                    roster_fallback=roster_fallback,
+                    roster_fields=roster_fields,
+                    meta=meta,
+                    workbook_path=workbook_path,
                     null_rule=default_null_rule,
                 )
 
@@ -1016,13 +1151,77 @@ def evaluate_column(
     )
 
 
-def build_master_rows(loaded: LoadedMasterConfig) -> List[OrderedDict[str, Any]]:
+def resolve_early_exit_source_value(
+    *,
+    bucket: EarlyExitAccumulator,
+    kind: str,
+    field_name: str,
+    default_null_rule: Mapping[str, Any],
+) -> Any:
+    return resolve_values(
+        values=bucket.source_values.get(source_key(kind, field_name), []),
+        duplicate_rule={"mode": "concat_distinct", "separator": "; "},
+        null_rule=default_null_rule,
+        column_id=field_name,
+    )
+
+
+def build_early_exit_rows(
+    *,
+    early_exits: Mapping[Tuple[str, str, str], EarlyExitAccumulator],
+    default_null_rule: Mapping[str, Any],
+) -> List[OrderedDict[str, Any]]:
+    rows = []
+    for bucket in early_exits.values():
+        row = OrderedDict()
+        row["ID"] = resolve_early_exit_source_value(
+            bucket=bucket,
+            kind="roster_field",
+            field_name="uid",
+            default_null_rule=default_null_rule,
+        )
+        row["Last Name"] = resolve_early_exit_source_value(
+            bucket=bucket,
+            kind="roster_field",
+            field_name="last",
+            default_null_rule=default_null_rule,
+        )
+        row["First Name"] = resolve_early_exit_source_value(
+            bucket=bucket,
+            kind="roster_field",
+            field_name="first",
+            default_null_rule=default_null_rule,
+        )
+        row["Block"] = resolve_early_exit_source_value(
+            bucket=bucket,
+            kind="meta_field",
+            field_name="block_number",
+            default_null_rule=default_null_rule,
+        )
+        row["Fiscal Year"] = resolve_early_exit_source_value(
+            bucket=bucket,
+            kind="meta_field",
+            field_name="fiscal_year",
+            default_null_rule=default_null_rule,
+        )
+        row["Exit Reason"] = "; ".join(bucket.reasons)
+        row["Source"] = "; ".join(bucket.source_workbooks)
+        row["Sheet"] = "; ".join(bucket.sheet_names)
+        rows.append(row)
+    return rows
+
+
+def build_master_result(loaded: LoadedMasterConfig) -> MasterBuildResult:
     buckets: MutableMapping[Tuple[str, str, str], CandidateAccumulator] = OrderedDict()
+    early_exits: MutableMapping[Tuple[str, str, str], EarlyExitAccumulator] = (
+        OrderedDict()
+    )
     for workbook_path in loaded_request_workbooks(loaded):
         ingest_node_workbook(
             workbook_path=workbook_path,
             loaded=loaded,
             buckets=buckets,
+            early_exits=early_exits,
         )
 
     columns = loaded.master_doc.get("columns", [])
@@ -1041,7 +1240,15 @@ def build_master_rows(loaded: LoadedMasterConfig) -> List[OrderedDict[str, Any]]
                 default_null_rule=default_null_rule,
             )
         rows.append(row)
-    return rows
+    early_exit_rows = build_early_exit_rows(
+        early_exits=early_exits,
+        default_null_rule=default_null_rule,
+    )
+    return MasterBuildResult(rows=rows, early_exit_rows=early_exit_rows)
+
+
+def build_master_rows(loaded: LoadedMasterConfig) -> List[OrderedDict[str, Any]]:
+    return list(build_master_result(loaded).rows)
 
 
 def loaded_request_workbooks(loaded: LoadedMasterConfig) -> Sequence[Path]:
@@ -1067,12 +1274,16 @@ def build_master_workbook(
     *,
     loaded: LoadedMasterConfig,
     rows: Sequence[OrderedDict[str, Any]],
+    early_exit_rows: Sequence[OrderedDict[str, Any]] = (),
 ) -> Workbook:
     wb = Workbook()
     ws = wb.active
     ws.title = "MASTER"
 
-    headers = [column.get("header", column.get("column_id")) for column in loaded.master_doc["columns"]]
+    headers = [
+        column.get("header", column.get("column_id"))
+        for column in loaded.master_doc["columns"]
+    ]
     for col_idx, header in enumerate(headers, start=1):
         cell = ws.cell(row=1, column=col_idx, value=header)
         cell.font = HEADER_FONT
@@ -1081,6 +1292,21 @@ def build_master_workbook(
     for row_idx, row in enumerate(rows, start=2):
         for col_idx, header in enumerate(headers, start=1):
             ws.cell(row=row_idx, column=col_idx, value=row.get(header))
+
+    if early_exit_rows:
+        early_exit_ws = wb.create_sheet("EARLY_EXITS")
+        early_exit_headers = list(early_exit_rows[0].keys())
+        for col_idx, header in enumerate(early_exit_headers, start=1):
+            cell = early_exit_ws.cell(row=1, column=col_idx, value=header)
+            cell.font = HEADER_FONT
+            cell.fill = HEADER_FILL
+        for row_idx, row in enumerate(early_exit_rows, start=2):
+            for col_idx, header in enumerate(early_exit_headers, start=1):
+                early_exit_ws.cell(
+                    row=row_idx,
+                    column=col_idx,
+                    value=row.get(header),
+                )
 
     return wb
 
@@ -1094,8 +1320,12 @@ def generate_master_workbook(request: MasterGenerationRequest) -> Path:
     )
     batch = resolve_master_workbook_batch(request, output_path=output_path)
     loaded = attach_request_workbooks(base_loaded, workbook_paths=batch.workbook_paths)
-    rows = build_master_rows(loaded)
-    workbook = build_master_workbook(loaded=loaded, rows=rows)
+    result = build_master_result(loaded)
+    workbook = build_master_workbook(
+        loaded=loaded,
+        rows=result.rows,
+        early_exit_rows=result.early_exit_rows,
+    )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     workbook.save(output_path)
     move_processed_workbooks(batch)
