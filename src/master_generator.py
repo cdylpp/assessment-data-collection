@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from copy import copy
 from collections import OrderedDict, defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta
@@ -9,6 +10,8 @@ from pathlib import Path
 from typing import Any, DefaultDict, Dict, Iterable, List, Mapping, MutableMapping, Optional, Sequence, Tuple
 
 from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Alignment
+from openpyxl.utils import get_column_letter
 
 from template_generator import (
     DEFAULT_CONFIG_PATH,
@@ -16,6 +19,8 @@ from template_generator import (
     HEADER_FONT,
     LoadedTemplateConfig,
     TemplateGenerationRequest,
+    add_min_pass_highlight_rule,
+    apply_table_cell_style,
     configured_locked_left_columns,
     load_generation_inputs,
     load_yaml,
@@ -30,6 +35,7 @@ class MasterGenerationRequest:
     output_path: Optional[Path] = None
     dropbox_path: Optional[Path] = None
     processed_path: Optional[Path] = None
+    dynamic: bool = False
 
 
 @dataclass(frozen=True)
@@ -72,7 +78,28 @@ class MasterBuildResult:
     early_exit_rows: Sequence[OrderedDict[str, Any]]
 
 
+@dataclass
+class DynamicMetricStyle:
+    header_fill: Any = None
+    body_fill: Any = None
+    number_format: str = "General"
+
+
+@dataclass
+class DynamicMasterBuildResult:
+    rows: Sequence[OrderedDict[str, Any]]
+    early_exit_rows: Sequence[OrderedDict[str, Any]]
+    metric_ids: Sequence[str]
+    metric_styles: Mapping[str, DynamicMetricStyle]
+
+
 EARLY_EXIT_REASONS = ("MED PULL", "DOR", "ADMIN PULL")
+DEFAULT_NULL_RULE = {
+    "trim_strings": True,
+    "blank_inputs_are_null": True,
+    "null_literals": ["N/A", "NA", "NULL", "null"],
+    "on_all_inputs_null": None,
+}
 
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
@@ -103,6 +130,14 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Processed archive directory (default: <dropbox>/processed).",
     )
     parser.add_argument(
+        "--dynamic",
+        action="store_true",
+        help=(
+            "Build a flattened master directly from workbook metric_ids instead "
+            "of config/master-config.yaml."
+        ),
+    )
+    parser.add_argument(
         "workbooks",
         nargs="*",
         help="Optional explicit node workbook xlsx files to aggregate.",
@@ -117,6 +152,7 @@ def request_from_namespace(args: argparse.Namespace) -> MasterGenerationRequest:
         output_path=Path(args.output).resolve() if args.output else None,
         dropbox_path=Path(args.dropbox).resolve() if args.dropbox else None,
         processed_path=Path(args.processed).resolve() if args.processed else None,
+        dynamic=bool(args.dynamic),
     )
 
 
@@ -330,6 +366,16 @@ def default_output_path(loaded: LoadedMasterConfig) -> Path:
         loaded.template.config_path.parent.parent
         / "workbooks"
         / "MasterWorkbook_v{0}.xlsx".format(loaded.master_doc.get("version", "unknown"))
+    ).resolve()
+
+
+def default_dynamic_output_path(template: LoadedTemplateConfig) -> Path:
+    return (
+        template.config_path.parent.parent
+        / "workbooks"
+        / "DynamicMasterWorkbook_v{0}.xlsx".format(
+            template.config_doc.get("version", "unknown")
+        )
     ).resolve()
 
 
@@ -618,6 +664,81 @@ def normalize_metric_value(
     if metric_type in {"categorical", "text"}:
         return str(value)
     return value
+
+
+def is_numeric_metric(metric: Mapping[str, Any]) -> bool:
+    return metric.get("type") in {"integer", "numeric", "timed"}
+
+
+def is_subjective_metric(metric: Mapping[str, Any]) -> bool:
+    return metric.get("domain_ref") == "subjective"
+
+
+def metric_display_name(metric_id: str, metric: Mapping[str, Any]) -> str:
+    return str(metric.get("display_name", metric_id))
+
+
+def append_unique(values: List[str], value: str) -> None:
+    if value not in values:
+        values.append(value)
+
+
+def capture_dynamic_metric_style(
+    *,
+    metric_styles: MutableMapping[str, DynamicMetricStyle],
+    metric_id: str,
+    ws: Any,
+    metric_id_row: int,
+    first_candidate_row: int,
+    col_idx: int,
+) -> None:
+    if metric_id in metric_styles:
+        return
+
+    header_row = max(1, metric_id_row - 2)
+    metric_styles[metric_id] = DynamicMetricStyle(
+        header_fill=copy(ws.cell(row=header_row, column=col_idx).fill),
+        body_fill=copy(ws.cell(row=first_candidate_row, column=col_idx).fill),
+        number_format=ws.cell(row=first_candidate_row, column=col_idx).number_format,
+    )
+
+
+def effective_dynamic_raw_values(
+    *,
+    raw_values: Sequence[Any],
+    metric: Mapping[str, Any],
+    null_rule: Mapping[str, Any],
+) -> Sequence[Any]:
+    if not is_subjective_metric(metric):
+        return raw_values
+
+    has_score = any(
+        normalize_null_like(value, null_rule) is not None for value in raw_values
+    )
+    if not has_score:
+        return []
+    return [
+        2 if normalize_null_like(value, null_rule) is None else value
+        for value in raw_values
+    ]
+
+
+def resolve_dynamic_metric_value(
+    *,
+    values: Sequence[Any],
+    metric: Mapping[str, Any],
+) -> Any:
+    non_null = [value for value in values if value is not None]
+    if not non_null:
+        return None
+
+    if is_numeric_metric(metric):
+        numeric_values = [float(value) for value in non_null]
+        average = sum(numeric_values) / len(numeric_values)
+        return int(average) if average.is_integer() else average
+
+    distinct_values = dedupe_preserve_order(non_null)
+    return "; ".join(str(value) for value in distinct_values)
 
 
 def read_meta_sheet(wb: Any) -> Dict[str, Any]:
@@ -1043,6 +1164,159 @@ def ingest_node_workbook(
         workbook.close()
 
 
+def ingest_node_workbook_dynamic(
+    *,
+    workbook_path: Path,
+    loaded: LoadedMasterConfig,
+    buckets: MutableMapping[Tuple[str, str, str], CandidateAccumulator],
+    early_exits: MutableMapping[Tuple[str, str, str], EarlyExitAccumulator],
+    metric_ids: List[str],
+    metric_styles: MutableMapping[str, DynamicMetricStyle],
+) -> None:
+    workbook = load_workbook(workbook_path, data_only=True)
+    try:
+        meta = read_meta_sheet(workbook)
+        validate_node_workbook_meta(
+            workbook_path=workbook_path,
+            meta=meta,
+            loaded=loaded,
+        )
+
+        default_null_rule = DEFAULT_NULL_RULE
+        roster_fields = all_configured_roster_fields(loaded)
+        sheet_contract = loaded.template.config_doc.get("sheet_contract", {})
+        configured_metric_id_row = int(sheet_contract.get("metric_id_row", 2))
+        configured_first_candidate_row = int(
+            sheet_contract.get("first_candidate_row", 3)
+        )
+
+        system_sheets = {"META", "ROSTER", "LOOKUPS", "MASTER", "EARLY_EXITS"}
+        for sheet_name in workbook.sheetnames:
+            if sheet_name in system_sheets:
+                continue
+
+            ws = workbook[sheet_name]
+            metric_id_row = detect_machine_header_row(
+                ws=ws,
+                configured_metric_id_row=configured_metric_id_row,
+                metrics_by_id=loaded.template.metrics_by_id,
+                roster_fields=roster_fields,
+            )
+            first_candidate_row = detected_first_candidate_row(
+                configured_first_candidate_row=configured_first_candidate_row,
+                machine_header_row=metric_id_row,
+            )
+            metric_columns = metric_columns_for_sheet(
+                ws=ws,
+                metric_id_row=metric_id_row,
+                metrics_by_id=loaded.template.metrics_by_id,
+            )
+            if not metric_columns:
+                continue
+
+            for col_idx, metric_id in metric_columns.items():
+                append_unique(metric_ids, metric_id)
+                capture_dynamic_metric_style(
+                    metric_styles=metric_styles,
+                    metric_id=metric_id,
+                    ws=ws,
+                    metric_id_row=metric_id_row,
+                    first_candidate_row=first_candidate_row,
+                    col_idx=col_idx,
+                )
+
+            roster_columns = roster_columns_for_sheet(
+                ws=ws,
+                metric_id_row=metric_id_row,
+                roster_fields=roster_fields,
+            )
+            for row_index in sheet_row_range(ws, first_candidate_row):
+                roster_fallback = fallback_roster_row(
+                    loaded=loaded,
+                    row_index=row_index,
+                    first_candidate_row=first_candidate_row,
+                )
+                uid_value = normalize_null_like(
+                    read_candidate_roster_value(
+                        ws=ws,
+                        row_index=row_index,
+                        field_name="uid",
+                        roster_columns=roster_columns,
+                        fallback_row=roster_fallback,
+                    ),
+                    default_null_rule,
+                )
+                if uid_value is None:
+                    continue
+
+                key = (
+                    str(uid_value),
+                    str(meta.get("block_number", "")),
+                    str(meta.get("fiscal_year", "")),
+                )
+
+                early_exit_reasons = early_exit_reasons_for_row(
+                    ws=ws,
+                    row_index=row_index,
+                    metric_columns=metric_columns,
+                )
+                if early_exit_reasons:
+                    buckets.pop(key, None)
+                    record_early_exit(
+                        early_exits=early_exits,
+                        key=key,
+                        reasons=early_exit_reasons,
+                        ws=ws,
+                        row_index=row_index,
+                        roster_columns=roster_columns,
+                        roster_fallback=roster_fallback,
+                        roster_fields=roster_fields,
+                        meta=meta,
+                        workbook_path=workbook_path,
+                        sheet_name=sheet_name,
+                        null_rule=default_null_rule,
+                    )
+                    continue
+                if key in early_exits:
+                    continue
+
+                bucket = buckets.setdefault(key, CandidateAccumulator())
+                accumulate_candidate_source_values(
+                    bucket=bucket,
+                    ws=ws,
+                    row_index=row_index,
+                    roster_columns=roster_columns,
+                    roster_fallback=roster_fallback,
+                    roster_fields=roster_fields,
+                    meta=meta,
+                    workbook_path=workbook_path,
+                    null_rule=default_null_rule,
+                )
+
+                row_metric_values = defaultdict(list)
+                for col_idx, metric_id in metric_columns.items():
+                    row_metric_values[metric_id].append(
+                        read_candidate_cell(ws, row_index, col_idx)
+                    )
+
+                for metric_id, raw_values in row_metric_values.items():
+                    metric = loaded.template.metrics_by_id[metric_id]
+                    for raw_value in effective_dynamic_raw_values(
+                        raw_values=raw_values,
+                        metric=metric,
+                        null_rule=default_null_rule,
+                    ):
+                        normalized_value = normalize_metric_value(
+                            raw_value=raw_value,
+                            metric=metric,
+                            null_rule=default_null_rule,
+                        )
+                        if normalized_value is not None:
+                            bucket.metric_values[metric_id].append(normalized_value)
+    finally:
+        workbook.close()
+
+
 def render_null_output(rule: Mapping[str, Any]) -> Any:
     mode = rule.get("on_all_inputs_null", "null")
     if mode in (None, "null"):
@@ -1153,7 +1427,7 @@ def evaluate_column(
 
 def resolve_early_exit_source_value(
     *,
-    bucket: EarlyExitAccumulator,
+    bucket: CandidateAccumulator | EarlyExitAccumulator,
     kind: str,
     field_name: str,
     default_null_rule: Mapping[str, Any],
@@ -1251,6 +1525,119 @@ def build_master_rows(loaded: LoadedMasterConfig) -> List[OrderedDict[str, Any]]
     return list(build_master_result(loaded).rows)
 
 
+def dynamic_metric_headers(
+    *,
+    metric_ids: Sequence[str],
+    metrics_by_id: Mapping[str, Mapping[str, Any]],
+) -> List[str]:
+    display_names = [
+        metric_display_name(metric_id, metrics_by_id[metric_id])
+        for metric_id in metric_ids
+    ]
+    duplicate_names = {
+        display_name
+        for display_name in display_names
+        if display_names.count(display_name) > 1
+    }
+    headers = []
+    for metric_id, display_name in zip(metric_ids, display_names):
+        if display_name in duplicate_names:
+            headers.append("{0} ({1})".format(display_name, metric_id))
+        else:
+            headers.append(display_name)
+    return headers
+
+
+def build_dynamic_master_result(
+    *,
+    template: LoadedTemplateConfig,
+    workbook_paths: Sequence[Path],
+) -> DynamicMasterBuildResult:
+    loaded = LoadedMasterConfig(
+        template=template,
+        master_path=template.config_path,
+        master_doc={},
+    )
+    buckets: MutableMapping[Tuple[str, str, str], CandidateAccumulator] = OrderedDict()
+    early_exits: MutableMapping[Tuple[str, str, str], EarlyExitAccumulator] = (
+        OrderedDict()
+    )
+    metric_ids = []  # type: List[str]
+    metric_styles = OrderedDict()  # type: MutableMapping[str, DynamicMetricStyle]
+
+    for workbook_path in workbook_paths:
+        ingest_node_workbook_dynamic(
+            workbook_path=workbook_path,
+            loaded=loaded,
+            buckets=buckets,
+            early_exits=early_exits,
+            metric_ids=metric_ids,
+            metric_styles=metric_styles,
+        )
+
+    default_null_rule = DEFAULT_NULL_RULE
+    metric_headers = dynamic_metric_headers(
+        metric_ids=metric_ids,
+        metrics_by_id=template.metrics_by_id,
+    )
+    rows = []
+    for bucket in buckets.values():
+        row = OrderedDict()
+        row["ID"] = resolve_early_exit_source_value(
+            bucket=bucket,
+            kind="roster_field",
+            field_name="uid",
+            default_null_rule=default_null_rule,
+        )
+        row["Last Name"] = resolve_early_exit_source_value(
+            bucket=bucket,
+            kind="roster_field",
+            field_name="last",
+            default_null_rule=default_null_rule,
+        )
+        row["First Name"] = resolve_early_exit_source_value(
+            bucket=bucket,
+            kind="roster_field",
+            field_name="first",
+            default_null_rule=default_null_rule,
+        )
+        row["Block"] = resolve_early_exit_source_value(
+            bucket=bucket,
+            kind="meta_field",
+            field_name="block_number",
+            default_null_rule=default_null_rule,
+        )
+        row["Fiscal Year"] = resolve_early_exit_source_value(
+            bucket=bucket,
+            kind="meta_field",
+            field_name="fiscal_year",
+            default_null_rule=default_null_rule,
+        )
+        row["Source"] = resolve_early_exit_source_value(
+            bucket=bucket,
+            kind="ingestion_metadata",
+            field_name="source_workbook",
+            default_null_rule=default_null_rule,
+        )
+        for metric_id, header in zip(metric_ids, metric_headers):
+            row[header] = resolve_dynamic_metric_value(
+                values=bucket.metric_values.get(metric_id, []),
+                metric=template.metrics_by_id[metric_id],
+            )
+        rows.append(row)
+
+    early_exit_rows = build_early_exit_rows(
+        early_exits=early_exits,
+        default_null_rule=default_null_rule,
+    )
+    return DynamicMasterBuildResult(
+        rows=rows,
+        early_exit_rows=early_exit_rows,
+        metric_ids=metric_ids,
+        metric_styles=metric_styles,
+    )
+
+
 def loaded_request_workbooks(loaded: LoadedMasterConfig) -> Sequence[Path]:
     workbook_paths = loaded.master_doc.get("_request_workbook_paths")
     if not isinstance(workbook_paths, list):
@@ -1311,7 +1698,136 @@ def build_master_workbook(
     return wb
 
 
+def build_dynamic_master_workbook(
+    *,
+    template: LoadedTemplateConfig,
+    result: DynamicMasterBuildResult,
+) -> Workbook:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "MASTER"
+
+    fixed_headers = [
+        "ID",
+        "Last Name",
+        "First Name",
+        "Block",
+        "Fiscal Year",
+        "Source",
+    ]
+    fixed_machine_headers = [
+        "uid",
+        "last",
+        "first",
+        "block_number",
+        "fiscal_year",
+        "source_workbook",
+    ]
+    metric_headers = dynamic_metric_headers(
+        metric_ids=result.metric_ids,
+        metrics_by_id=template.metrics_by_id,
+    )
+    headers = fixed_headers + metric_headers
+    machine_headers = fixed_machine_headers + list(result.metric_ids)
+    metric_start_col = len(fixed_headers) + 1
+    data_start_row = 3
+    data_end_row = max(data_start_row, len(result.rows) + data_start_row - 1)
+
+    for col_idx, header in enumerate(headers, start=1):
+        cell = ws.cell(row=1, column=col_idx, value=header)
+        cell.font = HEADER_FONT
+        cell.alignment = Alignment(
+            horizontal="center",
+            vertical="center",
+            wrap_text=True,
+        )
+        if col_idx >= metric_start_col:
+            metric_id = result.metric_ids[col_idx - metric_start_col]
+            style = result.metric_styles.get(metric_id)
+            cell.fill = copy(style.header_fill) if style else HEADER_FILL
+        else:
+            cell.fill = HEADER_FILL
+
+    for col_idx, header in enumerate(machine_headers, start=1):
+        ws.cell(row=2, column=col_idx, value=header).font = HEADER_FONT
+    ws.row_dimensions[2].hidden = True
+    ws.freeze_panes = "G3"
+
+    for row_idx, row in enumerate(result.rows, start=data_start_row):
+        for col_idx, header in enumerate(headers, start=1):
+            cell = ws.cell(row=row_idx, column=col_idx, value=row.get(header))
+            if col_idx >= metric_start_col:
+                metric_id = result.metric_ids[col_idx - metric_start_col]
+                style = result.metric_styles.get(metric_id)
+                if style and style.body_fill:
+                    apply_table_cell_style(cell, copy(style.body_fill))
+
+    for offset, metric_id in enumerate(result.metric_ids):
+        col_idx = metric_start_col + offset
+        col_letter = get_column_letter(col_idx)
+        metric = template.metrics_by_id[metric_id]
+        if metric.get("type") == "timed":
+            for row_idx in range(data_start_row, data_end_row + 1):
+                ws.cell(row=row_idx, column=col_idx).number_format = "0"
+        elif is_numeric_metric(metric):
+            for row_idx in range(data_start_row, data_end_row + 1):
+                ws.cell(row=row_idx, column=col_idx).number_format = "0.00"
+        add_min_pass_highlight_rule(
+            ws=ws,
+            metric=metric,
+            first_cell="{0}{1}".format(col_letter, data_start_row),
+            cell_range="{0}{1}:{0}{2}".format(
+                col_letter,
+                data_start_row,
+                data_end_row,
+            ),
+        )
+
+    if result.early_exit_rows:
+        early_exit_ws = wb.create_sheet("EARLY_EXITS")
+        early_exit_headers = list(result.early_exit_rows[0].keys())
+        for col_idx, header in enumerate(early_exit_headers, start=1):
+            cell = early_exit_ws.cell(row=1, column=col_idx, value=header)
+            cell.font = HEADER_FONT
+            cell.fill = HEADER_FILL
+        for row_idx, row in enumerate(result.early_exit_rows, start=2):
+            for col_idx, header in enumerate(early_exit_headers, start=1):
+                early_exit_ws.cell(
+                    row=row_idx,
+                    column=col_idx,
+                    value=row.get(header),
+                )
+
+    return wb
+
+
 def generate_master_workbook(request: MasterGenerationRequest) -> Path:
+    if request.dynamic:
+        template = load_generation_inputs(
+            TemplateGenerationRequest(
+                config_path=request.config_path,
+                entry_rows=1,
+            )
+        )
+        output_path = (
+            request.output_path.resolve()
+            if request.output_path
+            else default_dynamic_output_path(template)
+        )
+        batch = resolve_master_workbook_batch(request, output_path=output_path)
+        result = build_dynamic_master_result(
+            template=template,
+            workbook_paths=batch.workbook_paths,
+        )
+        workbook = build_dynamic_master_workbook(
+            template=template,
+            result=result,
+        )
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        workbook.save(output_path)
+        move_processed_workbooks(batch)
+        return output_path
+
     base_loaded = load_master_generation_inputs(request)
     output_path = (
         request.output_path.resolve()
