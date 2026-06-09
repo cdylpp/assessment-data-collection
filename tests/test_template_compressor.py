@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import tempfile
 import unittest
+from datetime import timedelta
 from pathlib import Path
 
 from openpyxl import load_workbook
@@ -68,6 +69,44 @@ class TemplateCompressorTest(unittest.TestCase):
                 self.assertEqual(workbook["PST"]["D4"].value, 61)
                 self.assertEqual(workbook["PST"]["E4"].value, 62)
                 self.assertEqual(workbook["Grit PT #1"]["D5"].value, 3)
+            finally:
+                workbook.close()
+
+    def test_compress_template_workbooks_normalizes_five_mile_mm_ss(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            node_a_path = temp_root / "node_a.xlsx"
+            node_b_path = temp_root / "node_b.xlsx"
+            output_path = temp_root / "node.xlsx"
+
+            for path in (node_a_path, node_b_path):
+                generate_template_workbook(
+                    TemplateGenerationRequest(
+                        config_path=(REPO_ROOT / "config" / "config.yaml").resolve(),
+                        output_path=path,
+                        block_number="101",
+                        fiscal_year="2026",
+                        entry_rows=10,
+                    )
+                )
+
+            set_sheet_value(node_a_path, "5 Mile Run", "D4", 23.6)
+            set_sheet_value(node_b_path, "5 Mile Run", "D5", 30.57)
+
+            generated_path = compress_template_workbooks(
+                TemplateCompressionRequest(
+                    config_path=(REPO_ROOT / "config" / "config.yaml").resolve(),
+                    workbook_paths=[node_a_path, node_b_path],
+                    output_path=output_path,
+                )
+            )
+
+            workbook = load_workbook(generated_path, data_only=True)
+            try:
+                row_four_value = workbook["5 Mile Run"]["D4"].value
+                row_five_value = workbook["5 Mile Run"]["D5"].value
+                self.assertEqual(row_four_value, timedelta(minutes=23, seconds=6))
+                self.assertEqual(row_five_value, timedelta(minutes=30, seconds=57))
             finally:
                 workbook.close()
 

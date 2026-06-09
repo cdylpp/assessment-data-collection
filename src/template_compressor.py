@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+from datetime import timedelta
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -13,7 +15,9 @@ from master_generator import (
     detect_machine_header_row,
     discover_workbooks,
     is_excel_workbook,
+    metric_entry_style,
     metric_columns_for_sheet,
+    normalize_timed_value,
     read_candidate_cell,
     sheet_row_range,
 )
@@ -135,7 +139,73 @@ def is_blank_value(value: Any) -> bool:
 
 
 def values_match(left: Any, right: Any) -> bool:
+    if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+        return abs(float(left) - float(right)) < 1e-9
     return left == right
+
+
+def metric_uses_split_time_fields(metric: Mapping[str, Any]) -> bool:
+    excel_input = metric.get("excel_input", {})
+    if not isinstance(excel_input, dict):
+        return False
+    return bool(excel_input.get("minutes_field") and excel_input.get("seconds_field"))
+
+
+def decimal_for_mm_ss_value(value: Any) -> Optional[Decimal]:
+    if isinstance(value, timedelta):
+        return (
+            Decimal(value.days)
+            + (Decimal(value.seconds) / Decimal(86400))
+            + (Decimal(value.microseconds) / Decimal(86400 * 1_000_000))
+        )
+    try:
+        return Decimal(str(value).strip())
+    except (InvalidOperation, AttributeError):
+        return None
+
+
+def normalize_split_mm_ss_value(value: Any) -> Optional[float]:
+    decimal_value = decimal_for_mm_ss_value(value)
+    if decimal_value is None or decimal_value < 0:
+        return None
+
+    text = format(decimal_value.normalize(), "f")
+    if "." not in text:
+        return float(int(text) * 60)
+
+    minutes_text, seconds_text = text.split(".", 1)
+    if not minutes_text or not minutes_text.isdigit():
+        return None
+
+    seconds_text = seconds_text.rstrip("0") or "0"
+    if len(seconds_text) > 2 or not seconds_text.isdigit():
+        return None
+
+    minutes = int(minutes_text)
+    seconds = int(seconds_text)
+    if seconds >= 60:
+        return None
+    return float(minutes * 60 + seconds)
+
+
+def compressed_cell_value_for_metric(value: Any, metric: Mapping[str, Any]) -> Any:
+    if metric.get("type") != "timed":
+        return value
+
+    entry_style = metric_entry_style(metric)
+    try:
+        if entry_style == "mm_ss" and metric_uses_split_time_fields(metric):
+            seconds = normalize_split_mm_ss_value(value)
+            if seconds is None:
+                seconds = normalize_timed_value(value, entry_style=entry_style)
+        else:
+            seconds = normalize_timed_value(value, entry_style=entry_style)
+    except ValueError:
+        return value
+
+    if seconds is None:
+        return value
+    return seconds / 86400
 
 
 def all_configured_roster_fields_from_template(loaded: Any) -> List[str]:
@@ -272,9 +342,14 @@ def initialize_source_map(
         )
         first_candidate_row = max(configured_first_candidate_row, metric_id_row + 1)
         for row_index in sheet_row_range(ws, first_candidate_row):
-            for col_idx in metric_columns:
-                value = read_candidate_cell(ws, row_index, col_idx)
+            for col_idx, metric_id in metric_columns.items():
+                cell = ws.cell(row=row_index, column=col_idx)
+                value = compressed_cell_value_for_metric(
+                    cell.value,
+                    metrics_by_id[metric_id],
+                )
                 if not is_blank_value(value):
+                    cell.value = value
                     source_map[(sheet_name, row_index, col_idx)] = base_path.name
     return source_map
 
@@ -320,13 +395,21 @@ def copy_score_cells(
         )
 
         for row_index in sheet_row_range(base_ws, first_candidate_row):
-            for col_idx in base_metric_columns:
-                incoming_value = read_candidate_cell(source_ws, row_index, col_idx)
+            for col_idx, metric_id in base_metric_columns.items():
+                incoming_value = compressed_cell_value_for_metric(
+                    read_candidate_cell(source_ws, row_index, col_idx),
+                    metrics_by_id[metric_id],
+                )
                 if is_blank_value(incoming_value):
                     continue
 
                 base_cell = base_ws.cell(row=row_index, column=col_idx)
-                existing_value = base_cell.value
+                existing_value = compressed_cell_value_for_metric(
+                    base_cell.value,
+                    metrics_by_id[metric_id],
+                )
+                if not is_blank_value(existing_value):
+                    base_cell.value = existing_value
                 source_key = (sheet_name, row_index, col_idx)
                 if is_blank_value(existing_value):
                     base_cell.value = incoming_value
