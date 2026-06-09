@@ -26,8 +26,17 @@ from template_generator import (
 @dataclass(frozen=True)
 class MasterGenerationRequest:
     config_path: Path
-    workbook_paths: Sequence[Path]
+    workbook_paths: Sequence[Path] = ()
     output_path: Optional[Path] = None
+    dropbox_path: Optional[Path] = None
+    processed_path: Optional[Path] = None
+
+
+@dataclass(frozen=True)
+class MasterWorkbookBatch:
+    workbook_paths: Sequence[Path]
+    pending_paths: Sequence[Path] = ()
+    processed_path: Optional[Path] = None
 
 
 @dataclass(frozen=True)
@@ -62,9 +71,22 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Output xlsx path (default: workbooks/MasterWorkbook_v{version}.xlsx).",
     )
     parser.add_argument(
+        "--dropbox",
+        default=None,
+        help=(
+            "Directory containing newly scored node workbooks. Existing files in "
+            "dropbox/processed are included for cumulative compilation."
+        ),
+    )
+    parser.add_argument(
+        "--processed",
+        default=None,
+        help="Processed archive directory (default: <dropbox>/processed).",
+    )
+    parser.add_argument(
         "workbooks",
-        nargs="+",
-        help="One or more node workbook xlsx files to aggregate.",
+        nargs="*",
+        help="Optional explicit node workbook xlsx files to aggregate.",
     )
     return parser.parse_args(argv)
 
@@ -74,6 +96,8 @@ def request_from_namespace(args: argparse.Namespace) -> MasterGenerationRequest:
         config_path=Path(args.config).resolve(),
         workbook_paths=[Path(value).resolve() for value in args.workbooks],
         output_path=Path(args.output).resolve() if args.output else None,
+        dropbox_path=Path(args.dropbox).resolve() if args.dropbox else None,
+        processed_path=Path(args.processed).resolve() if args.processed else None,
     )
 
 
@@ -256,9 +280,6 @@ def validate_master_config(loaded: LoadedMasterConfig) -> None:
 def load_master_generation_inputs(
     request: MasterGenerationRequest,
 ) -> LoadedMasterConfig:
-    if not request.workbook_paths:
-        raise ValueError("At least one workbook path is required")
-
     template = load_generation_inputs(
         TemplateGenerationRequest(
             config_path=request.config_path,
@@ -291,6 +312,141 @@ def default_output_path(loaded: LoadedMasterConfig) -> Path:
         / "workbooks"
         / "MasterWorkbook_v{0}.xlsx".format(loaded.master_doc.get("version", "unknown"))
     ).resolve()
+
+
+def is_excel_workbook(path: Path) -> bool:
+    return (
+        path.is_file()
+        and path.suffix.lower() == ".xlsx"
+        and not path.name.startswith("~$")
+    )
+
+
+def discover_workbooks(directory: Path) -> List[Path]:
+    if not directory.exists():
+        return []
+    if not directory.is_dir():
+        raise ValueError("Workbook source is not a directory: {0}".format(directory))
+    return sorted(
+        (path.resolve() for path in directory.iterdir() if is_excel_workbook(path)),
+        key=lambda path: path.name,
+    )
+
+
+def dedupe_paths(paths: Sequence[Path]) -> List[Path]:
+    deduped = []  # type: List[Path]
+    seen = set()
+    for path in paths:
+        resolved = path.resolve()
+        if resolved not in seen:
+            seen.add(resolved)
+            deduped.append(resolved)
+    return deduped
+
+
+def validate_explicit_workbook_paths(workbook_paths: Sequence[Path]) -> None:
+    for workbook_path in workbook_paths:
+        if not is_excel_workbook(workbook_path):
+            raise ValueError(
+                "Node workbook path is not a readable .xlsx file: {0}".format(
+                    workbook_path
+                )
+            )
+
+
+def path_contains(parent: Path, child: Path) -> bool:
+    parent = parent.resolve()
+    child = child.resolve()
+    return child == parent or child.is_relative_to(parent)
+
+
+def validate_dropbox_output_path(
+    *,
+    output_path: Path,
+    dropbox_path: Path,
+    processed_path: Path,
+) -> None:
+    if path_contains(dropbox_path, output_path) or path_contains(
+        processed_path, output_path
+    ):
+        raise ValueError(
+            "Master output must not be written inside the dropbox or processed folder"
+        )
+
+
+def resolve_master_workbook_batch(
+    request: MasterGenerationRequest,
+    *,
+    output_path: Path,
+) -> MasterWorkbookBatch:
+    explicit_paths = dedupe_paths(
+        [Path(path).resolve() for path in request.workbook_paths]
+    )
+    validate_explicit_workbook_paths(explicit_paths)
+
+    if request.processed_path and request.dropbox_path is None:
+        raise ValueError("--processed requires --dropbox")
+
+    if request.dropbox_path is None:
+        if not explicit_paths:
+            raise ValueError("Provide at least one workbook path or --dropbox")
+        return MasterWorkbookBatch(workbook_paths=explicit_paths)
+
+    dropbox_path = request.dropbox_path.resolve()
+    if not dropbox_path.is_dir():
+        raise ValueError("Dropbox path is not a directory: {0}".format(dropbox_path))
+
+    processed_path = (
+        request.processed_path.resolve()
+        if request.processed_path
+        else (dropbox_path / "processed").resolve()
+    )
+    if processed_path.exists() and not processed_path.is_dir():
+        raise ValueError(
+            "Processed path is not a directory: {0}".format(processed_path)
+        )
+
+    validate_dropbox_output_path(
+        output_path=output_path,
+        dropbox_path=dropbox_path,
+        processed_path=processed_path,
+    )
+
+    pending_paths = discover_workbooks(dropbox_path)
+    processed_paths = discover_workbooks(processed_path)
+
+    for pending_path in pending_paths:
+        target_path = processed_path / pending_path.name
+        if target_path.exists():
+            raise ValueError(
+                "Processed workbook already exists for dropbox file '{0}': {1}".format(
+                    pending_path.name,
+                    target_path,
+                )
+            )
+
+    workbook_paths = dedupe_paths(
+        list(explicit_paths) + processed_paths + pending_paths
+    )
+    if not workbook_paths:
+        raise ValueError("No .xlsx node workbooks found to compile")
+
+    return MasterWorkbookBatch(
+        workbook_paths=workbook_paths,
+        pending_paths=pending_paths,
+        processed_path=processed_path,
+    )
+
+
+def move_processed_workbooks(batch: MasterWorkbookBatch) -> None:
+    if not batch.pending_paths:
+        return
+    if batch.processed_path is None:
+        raise ValueError("Internal master generation state is missing processed path")
+
+    batch.processed_path.mkdir(parents=True, exist_ok=True)
+    for pending_path in batch.pending_paths:
+        pending_path.replace(batch.processed_path / pending_path.name)
 
 
 def normalize_null_like(value: Any, rule: Mapping[str, Any]) -> Any:
@@ -930,17 +1086,19 @@ def build_master_workbook(
 
 
 def generate_master_workbook(request: MasterGenerationRequest) -> Path:
-    loaded = attach_request_workbooks(
-        load_master_generation_inputs(request),
-        workbook_paths=request.workbook_paths,
+    base_loaded = load_master_generation_inputs(request)
+    output_path = (
+        request.output_path.resolve()
+        if request.output_path
+        else default_output_path(base_loaded)
     )
+    batch = resolve_master_workbook_batch(request, output_path=output_path)
+    loaded = attach_request_workbooks(base_loaded, workbook_paths=batch.workbook_paths)
     rows = build_master_rows(loaded)
     workbook = build_master_workbook(loaded=loaded, rows=rows)
-    output_path = (
-        request.output_path.resolve() if request.output_path else default_output_path(loaded)
-    )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     workbook.save(output_path)
+    move_processed_workbooks(batch)
     return output_path
 
 

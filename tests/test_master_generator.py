@@ -160,6 +160,68 @@ class MasterGeneratorTest(unittest.TestCase):
             finally:
                 workbook.close()
 
+    def test_generate_master_workbook_from_dropbox_is_cumulative(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            dropbox_path = temp_root / "dropbox"
+            dropbox_path.mkdir()
+            master_path = temp_root / "master.xlsx"
+            node_a_path = dropbox_path / "node_a.xlsx"
+
+            generate_template_workbook(
+                TemplateGenerationRequest(
+                    config_path=(REPO_ROOT / "config" / "config.yaml").resolve(),
+                    output_path=node_a_path,
+                    block_number="101",
+                    fiscal_year="2026",
+                    entry_rows=10,
+                )
+            )
+            set_sheet_value(node_a_path, "PST", "D4", 45)
+
+            generate_master_workbook(
+                MasterGenerationRequest(
+                    config_path=(REPO_ROOT / "config" / "config.yaml").resolve(),
+                    dropbox_path=dropbox_path,
+                    output_path=master_path,
+                )
+            )
+
+            processed_path = dropbox_path / "processed"
+            self.assertFalse(node_a_path.exists())
+            self.assertTrue((processed_path / "node_a.xlsx").exists())
+
+            node_b_path = dropbox_path / "node_b.xlsx"
+            generate_template_workbook(
+                TemplateGenerationRequest(
+                    config_path=(REPO_ROOT / "config" / "config.yaml").resolve(),
+                    output_path=node_b_path,
+                    block_number="101",
+                    fiscal_year="2026",
+                    entry_rows=10,
+                )
+            )
+            set_sheet_value(node_b_path, "PST", "E4", 55)
+
+            generate_master_workbook(
+                MasterGenerationRequest(
+                    config_path=(REPO_ROOT / "config" / "config.yaml").resolve(),
+                    dropbox_path=dropbox_path,
+                    output_path=master_path,
+                )
+            )
+
+            self.assertFalse(node_b_path.exists())
+            self.assertTrue((processed_path / "node_b.xlsx").exists())
+            workbook = load_workbook(master_path, data_only=True)
+            try:
+                ws = workbook["MASTER"]
+                self.assertEqual(ws["E2"].value, "node_a.xlsx; node_b.xlsx")
+                self.assertEqual(ws["H2"].value, 45)
+                self.assertEqual(ws["I2"].value, 55)
+            finally:
+                workbook.close()
+
 
 if __name__ == "__main__":
     unittest.main()
