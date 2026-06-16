@@ -166,7 +166,7 @@ columns:
       alignment: center
 
   - column_id: run_total_seconds
-    header: Run Total (seconds)
+    header: Run Total (mm:ss)
     type: integer
     source:
       kind: metric
@@ -176,12 +176,12 @@ columns:
     null_rule:
       on_all_inputs_null: blank
     output:
-      excel_number_format: "0"
+      excel_number_format: "[mm]:ss"
       alignment: center
-      style_tags: [seconds]
+      style_tags: [time]
 
   - column_id: swim_total_seconds
-    header: Swim Total (seconds)
+    header: Swim Total (mm:ss)
     type: integer
     source:
       kind: metric
@@ -191,9 +191,9 @@ columns:
     null_rule:
       on_all_inputs_null: blank
     output:
-      excel_number_format: "0"
+      excel_number_format: "[mm]:ss"
       alignment: center
-      style_tags: [seconds]
+      style_tags: [time]
 
   - column_id: weighted_tread
     header: Weighted Tread
@@ -232,7 +232,7 @@ columns:
       alignment: center
 
   - column_id: ruck_run_total_seconds
-    header: 4.5 Mile Ruck Run Total (seconds)
+    header: 4.5 Mile Ruck Run Total (mm:ss)
     type: integer
     source:
       kind: metric
@@ -242,9 +242,9 @@ columns:
     null_rule:
       on_all_inputs_null: blank
     output:
-      excel_number_format: "0"
+      excel_number_format: "[mm]:ss"
       alignment: center
-      style_tags: [seconds]
+      style_tags: [time]
 
   - column_id: ibs_low_carry_physicality_total
     header: IBS Low Carry - Physicality Total

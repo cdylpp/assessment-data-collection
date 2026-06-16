@@ -135,6 +135,9 @@ class TemplateGeneratorSmokeTest(unittest.TestCase):
                 self.assertIn("Log Carry around O Course", workbook.sheetnames)
                 self.assertIn("IBS Land Portage #2", workbook.sheetnames)
                 pst = workbook["PST"]
+                self.assertFalse(workbook["META"].protection.sheet)
+                self.assertFalse(workbook["ROSTER"].protection.sheet)
+                self.assertFalse(pst.protection.sheet)
                 self.assertFalse(pst.row_dimensions[2].hidden)
                 self.assertTrue(pst.row_dimensions[3].hidden)
                 roster_fields = loaded.config_doc["sheet_contract"][
@@ -166,6 +169,21 @@ class TemplateGeneratorSmokeTest(unittest.TestCase):
                     pst.cell(row=4, column=run_time_col).number_format,
                     "[mm]:ss",
                 )
+                timed_metric_columns = []
+                for sheet_name in workbook.sheetnames:
+                    if sheet_name in {"META", "ROSTER", "LOOKUPS"}:
+                        continue
+                    ws = workbook[sheet_name]
+                    for col_idx in range(1, ws.max_column + 1):
+                        metric_id = ws.cell(row=3, column=col_idx).value
+                        metric = loaded.metrics_by_id.get(metric_id)
+                        if metric and metric.get("type") == "timed":
+                            timed_metric_columns.append((sheet_name, col_idx))
+                            self.assertEqual(
+                                ws.cell(row=4, column=col_idx).number_format,
+                                "[mm]:ss",
+                            )
+                self.assertTrue(timed_metric_columns)
                 timed_validations = [
                     validation
                     for validation in pst.data_validations.dataValidation

@@ -9,6 +9,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, DefaultDict, Dict, Iterable, List, Mapping, MutableMapping, Optional, Sequence, Tuple
 
+from openpyxl.formatting.rule import FormulaRule
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment
 from openpyxl.utils import get_column_letter
@@ -17,9 +18,10 @@ from template_generator import (
     DEFAULT_CONFIG_PATH,
     HEADER_FILL,
     HEADER_FONT,
+    INVALID_FILL,
+    INVALID_FONT,
     LoadedTemplateConfig,
     TemplateGenerationRequest,
-    add_min_pass_highlight_rule,
     apply_table_cell_style,
     configured_locked_left_columns,
     load_generation_inputs,
@@ -527,14 +529,6 @@ def normalize_null_like(value: Any, rule: Mapping[str, Any]) -> Any:
     return value
 
 
-def metric_entry_style(metric: Mapping[str, Any]) -> Optional[str]:
-    excel_input = metric.get("excel_input", {})
-    if not isinstance(excel_input, dict):
-        return None
-    entry_style = excel_input.get("entry_style")
-    return str(entry_style) if entry_style else None
-
-
 def normalize_mm_ss_decimal(value: Decimal) -> Optional[float]:
     if value < 0:
         return None
@@ -558,12 +552,12 @@ def normalize_mm_ss_value(value: Any) -> Optional[float]:
     return normalize_mm_ss_decimal(decimal_value)
 
 
-def normalize_time_string(raw: str, entry_style: Optional[str] = None) -> Optional[float]:
+def normalize_time_string(raw: str) -> Optional[float]:
     stripped = raw.strip()
     if not stripped:
         return None
 
-    if entry_style == "mm_ss" and "." in stripped:
+    if "." in stripped:
         parsed = normalize_mm_ss_value(stripped)
         if parsed is not None:
             return parsed
@@ -588,14 +582,12 @@ def normalize_time_string(raw: str, entry_style: Optional[str] = None) -> Option
     return None
 
 
-def normalize_timed_value(
-    value: Any, entry_style: Optional[str] = None
-) -> Optional[float]:
+def normalize_timed_value(value: Any) -> Optional[float]:
     if value is None:
         return None
     if isinstance(value, timedelta):
         total_seconds = value.total_seconds()
-        if entry_style == "mm_ss" and abs(total_seconds) >= 86400:
+        if abs(total_seconds) >= 86400:
             parsed = normalize_mm_ss_value(total_seconds / 86400)
             if parsed is not None:
                 return parsed
@@ -615,16 +607,70 @@ def normalize_timed_value(
             + value.microsecond / 1_000_000.0
         )
     if isinstance(value, (int, float)):
-        if entry_style == "mm_ss":
-            parsed = normalize_mm_ss_value(value)
-            if parsed is not None:
-                return parsed
-        return float(value) * 86400 if abs(float(value)) <= 2 else float(value)
+        numeric_value = float(value)
+        if abs(numeric_value) < 1:
+            return numeric_value * 86400
+        parsed = normalize_mm_ss_value(value)
+        if parsed is not None:
+            return parsed
     if isinstance(value, str):
-        parsed = normalize_time_string(value, entry_style=entry_style)
+        parsed = normalize_time_string(value)
         if parsed is not None:
             return parsed
     raise ValueError("Unsupported timed value '{0}'".format(value))
+
+
+def master_min_pass_threshold(metric: Mapping[str, Any]) -> Optional[float]:
+    min_pass = metric.get("min_pass")
+    if min_pass is None:
+        return None
+
+    if metric.get("type") == "timed":
+        try:
+            seconds = normalize_timed_value(min_pass)
+        except ValueError:
+            return None
+        if seconds is None:
+            return None
+        return seconds / 86400
+
+    try:
+        return float(min_pass)
+    except (TypeError, ValueError):
+        return None
+
+
+def add_master_min_pass_highlight_rule(
+    *,
+    ws: Any,
+    metric: Mapping[str, Any],
+    first_cell: str,
+    cell_range: str,
+) -> None:
+    threshold = master_min_pass_threshold(metric)
+    if threshold is None:
+        return
+
+    if metric.get("type") == "timed":
+        formula = "AND(NOT(ISBLANK({0})),ISNUMBER({0}),{0}>{1})".format(
+            first_cell,
+            threshold,
+        )
+    else:
+        formula = "AND(NOT(ISBLANK({0})),ISNUMBER({0}),{0}<{1})".format(
+            first_cell,
+            threshold,
+        )
+
+    ws.conditional_formatting.add(
+        cell_range,
+        FormulaRule(
+            formula=[formula],
+            stopIfTrue=False,
+            fill=INVALID_FILL,
+            font=INVALID_FONT,
+        ),
+    )
 
 
 def normalize_numeric_value(value: Any, *, integer: bool) -> Optional[Any]:
@@ -656,7 +702,7 @@ def normalize_metric_value(
 
     metric_type = metric.get("type")
     if metric_type == "timed":
-        return normalize_timed_value(value, entry_style=metric_entry_style(metric))
+        return normalize_timed_value(value)
     if metric_type == "integer":
         return normalize_numeric_value(value, integer=True)
     if metric_type == "numeric":
@@ -668,6 +714,12 @@ def normalize_metric_value(
 
 def is_numeric_metric(metric: Mapping[str, Any]) -> bool:
     return metric.get("type") in {"integer", "numeric", "timed"}
+
+
+def master_cell_value(value: Any, metric: Optional[Mapping[str, Any]]) -> Any:
+    if metric is None or metric.get("type") != "timed" or value in (None, ""):
+        return value
+    return float(value) / 86400
 
 
 def is_subjective_metric(metric: Mapping[str, Any]) -> bool:
@@ -1671,6 +1723,15 @@ def build_master_workbook(
         column.get("header", column.get("column_id"))
         for column in loaded.master_doc["columns"]
     ]
+    column_metrics = []
+    for column in loaded.master_doc["columns"]:
+        source = column.get("source", {})
+        metric_ids = source.get("metric_ids", [])
+        if source.get("kind") == "metric" and len(metric_ids) == 1:
+            column_metrics.append(loaded.template.metrics_by_id.get(metric_ids[0]))
+        else:
+            column_metrics.append(None)
+
     for col_idx, header in enumerate(headers, start=1):
         cell = ws.cell(row=1, column=col_idx, value=header)
         cell.font = HEADER_FONT
@@ -1678,7 +1739,32 @@ def build_master_workbook(
 
     for row_idx, row in enumerate(rows, start=2):
         for col_idx, header in enumerate(headers, start=1):
-            ws.cell(row=row_idx, column=col_idx, value=row.get(header))
+            metric = column_metrics[col_idx - 1]
+            cell = ws.cell(
+                row=row_idx,
+                column=col_idx,
+                value=master_cell_value(row.get(header), metric),
+            )
+            if metric is not None and metric.get("type") == "timed":
+                cell.number_format = "[mm]:ss"
+
+    data_start_row = 2
+    data_end_row = max(data_start_row, len(rows) + data_start_row - 1)
+    for col_idx, column in enumerate(loaded.master_doc["columns"], start=1):
+        metric = column_metrics[col_idx - 1]
+        if metric is None:
+            continue
+        col_letter = get_column_letter(col_idx)
+        add_master_min_pass_highlight_rule(
+            ws=ws,
+            metric=metric,
+            first_cell="{0}{1}".format(col_letter, data_start_row),
+            cell_range="{0}{1}:{0}{2}".format(
+                col_letter,
+                data_start_row,
+                data_end_row,
+            ),
+        )
 
     if early_exit_rows:
         early_exit_ws = wb.create_sheet("EARLY_EXITS")
@@ -1755,7 +1841,16 @@ def build_dynamic_master_workbook(
 
     for row_idx, row in enumerate(result.rows, start=data_start_row):
         for col_idx, header in enumerate(headers, start=1):
-            cell = ws.cell(row=row_idx, column=col_idx, value=row.get(header))
+            metric = None
+            if col_idx >= metric_start_col:
+                metric = template.metrics_by_id[
+                    result.metric_ids[col_idx - metric_start_col]
+                ]
+            cell = ws.cell(
+                row=row_idx,
+                column=col_idx,
+                value=master_cell_value(row.get(header), metric),
+            )
             if col_idx >= metric_start_col:
                 metric_id = result.metric_ids[col_idx - metric_start_col]
                 style = result.metric_styles.get(metric_id)
@@ -1768,11 +1863,11 @@ def build_dynamic_master_workbook(
         metric = template.metrics_by_id[metric_id]
         if metric.get("type") == "timed":
             for row_idx in range(data_start_row, data_end_row + 1):
-                ws.cell(row=row_idx, column=col_idx).number_format = "0"
+                ws.cell(row=row_idx, column=col_idx).number_format = "[mm]:ss"
         elif is_numeric_metric(metric):
             for row_idx in range(data_start_row, data_end_row + 1):
                 ws.cell(row=row_idx, column=col_idx).number_format = "0.00"
-        add_min_pass_highlight_rule(
+        add_master_min_pass_highlight_rule(
             ws=ws,
             metric=metric,
             first_cell="{0}{1}".format(col_letter, data_start_row),

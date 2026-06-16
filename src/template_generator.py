@@ -13,7 +13,7 @@ import yaml
 from openpyxl import Workbook
 from openpyxl.comments import Comment
 from openpyxl.formatting.rule import FormulaRule
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Protection, Side
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.workbook.defined_name import DefinedName
 from openpyxl.worksheet.datavalidation import DataValidation
@@ -164,7 +164,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         "--entry-rows",
         type=int,
         default=DEFAULT_ENTRY_ROWS,
-        help="How many editable candidate rows to pre-unlock in each evolution sheet.",
+        help="How many editable candidate rows to include in each evolution sheet.",
     )
     parser.add_argument(
         "--event-id",
@@ -1011,7 +1011,6 @@ def style_header_row(ws: Any, headers: List[str], row_index: int) -> None:
         cell.font = HEADER_FONT
         apply_table_cell_style(cell, HEADER_FILL)
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-        cell.protection = Protection(locked=True)
 
 
 def apply_touch_row_height(ws: Any, row_index: int, is_header: bool = False) -> None:
@@ -1055,12 +1054,8 @@ def create_meta_sheet(
     for row_index, (key, value) in enumerate(rows, start=1):
         ws.cell(row=row_index, column=1, value=key).font = HEADER_FONT
         ws.cell(row=row_index, column=2, value=value)
-        ws.cell(row=row_index, column=1).protection = Protection(locked=True)
-        ws.cell(row=row_index, column=2).protection = Protection(locked=True)
     ws.column_dimensions["A"].width = 24
     ws.column_dimensions["B"].width = 36
-    ws.protection.sheet = True
-    ws.protection.enable()
 
 
 def create_roster_sheet(wb: Workbook, roster_rows: List[Dict[str, str]]) -> None:
@@ -1085,9 +1080,6 @@ def create_roster_sheet(wb: Workbook, roster_rows: List[Dict[str, str]]) -> None
         for col_idx in range(1, 4):
             cell = ws.cell(row=row_index, column=col_idx)
             apply_table_cell_style(cell, row_fill)
-            cell.protection = Protection(locked=False)
-    ws.protection.sheet = True
-    ws.protection.enable()
 
 
 def create_lookups_sheet(
@@ -1111,8 +1103,6 @@ def create_lookups_sheet(
             named_ranges[domain] = defined_name
 
     ws.sheet_state = "hidden"
-    ws.protection.sheet = True
-    ws.protection.enable()
     return named_ranges
 
 
@@ -1137,6 +1127,44 @@ def _try_float(value: Any) -> Optional[float]:
     return None
 
 
+def _timed_threshold_values(value: Any) -> Optional[Tuple[float, float]]:
+    seconds = None
+    if isinstance(value, (int, float)):
+        seconds = float(value)
+    elif isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        if ":" in stripped:
+            parts = stripped.split(":")
+            if len(parts) != 2:
+                return None
+            try:
+                minutes = int(parts[0])
+                seconds_part = int(parts[1])
+            except ValueError:
+                return None
+            if minutes < 0 or seconds_part < 0 or seconds_part >= 60:
+                return None
+            seconds = float(minutes * 60 + seconds_part)
+        else:
+            threshold = _try_float(stripped)
+            if threshold is None:
+                return None
+            minutes = int(threshold)
+            seconds_part = round((threshold - minutes) * 100)
+            if seconds_part < 0 or seconds_part >= 60:
+                return None
+            seconds = float(minutes * 60 + seconds_part)
+
+    if seconds is None:
+        return None
+
+    minutes = int(seconds // 60)
+    seconds_part = int(seconds % 60)
+    return seconds / 86400, minutes + (seconds_part / 100)
+
+
 def add_min_pass_highlight_rule(
     ws: Any,
     metric: Mapping[str, Any],
@@ -1148,16 +1176,19 @@ def add_min_pass_highlight_rule(
         return
 
     metric_type = metric.get("type")
-    threshold = _try_float(min_pass)
-    if threshold is None:
-        return
-
     if metric_type == "timed":
-        excel_threshold = threshold / 86400
-        formula = "AND(NOT(ISBLANK({0})),ISNUMBER({0}),{0}>{1})".format(
-            first_cell, excel_threshold
-        )
+        thresholds = _timed_threshold_values(min_pass)
+        if thresholds is None:
+            return
+        excel_time_threshold, mm_ss_threshold = thresholds
+        formula = (
+            "AND(NOT(ISBLANK({0})),ISNUMBER({0}),"
+            "OR(AND({0}<1,{0}>{1}),AND({0}>=1,{0}>{2})))"
+        ).format(first_cell, excel_time_threshold, mm_ss_threshold)
     else:
+        threshold = _try_float(min_pass)
+        if threshold is None:
+            return
         formula = "AND(NOT(ISBLANK({0})),ISNUMBER({0}),{0}<{1})".format(
             first_cell, threshold
         )
@@ -1212,16 +1243,16 @@ def add_data_validations(
             formula1=(
                 "=OR("
                 "ISBLANK({0}),"
-                "AND(ISNUMBER({0}),{0}>=0,{0}<1),"
-                "AND(ISNUMBER({0}),{0}=ROUND({0},2),MOD({0},1)<0.6)"
+                "AND(ISNUMBER({0}),{0}>=0,"
+                "OR({0}<1,AND({0}=ROUND({0},2),MOD({0},1)<0.6)))"
                 ")"
             ).format(first_cell),
             allow_blank=True,
         )
         dv.promptTitle = "Time Entry"
-        dv.prompt = "Enter time as mm.ss, such as 10.30, or as mm:ss."
+        dv.prompt = "Enter time as mm:ss or mm.ss, such as 10:30 or 10.30."
         dv.errorTitle = "Invalid Time"
-        dv.error = "Use mm.ss with seconds from 00 to 59, or enter an Excel time."
+        dv.error = "Use mm:ss or mm.ss with seconds from 00 to 59."
         ws.add_data_validation(dv)
         dv.add(cell_range)
         for row_idx in range(row_start, row_end + 1):
@@ -1321,7 +1352,6 @@ def create_evolution_sheets(
                 cell.alignment = Alignment(
                     horizontal="center", vertical="center", wrap_text=True
                 )
-                cell.protection = Protection(locked=True)
             ws.cell(row=header_row, column=col_idx, value=header)
             if occurrence_label_row > header_row:
                 ws.merge_cells(
@@ -1357,7 +1387,6 @@ def create_evolution_sheets(
                     cell.alignment = Alignment(
                         horizontal="center", vertical="center", wrap_text=True
                     )
-                    cell.protection = Protection(locked=True)
 
             ws.cell(row=header_row, column=group_start_col, value=display_name)
             if group_end_col > group_start_col:
@@ -1390,8 +1419,7 @@ def create_evolution_sheets(
             column.metric_id for column in metric_columns
         ]
         for col_idx, value in enumerate(machine_headers, start=1):
-            cell = ws.cell(row=machine_metric_id_row, column=col_idx, value=value)
-            cell.protection = Protection(locked=True)
+            ws.cell(row=machine_metric_id_row, column=col_idx, value=value)
         ws.row_dimensions[machine_metric_id_row].hidden = True
         ws.freeze_panes = freeze_panes
 
@@ -1412,12 +1440,6 @@ def create_evolution_sheets(
         for metadata_row, (key, value) in enumerate(metadata_rows, start=1):
             ws.cell(row=metadata_row, column=meta_start_col, value=key).font = HEADER_FONT
             ws.cell(row=metadata_row, column=meta_start_col + 1, value=value)
-            ws.cell(row=metadata_row, column=meta_start_col).protection = Protection(
-                locked=True
-            )
-            ws.cell(row=metadata_row, column=meta_start_col + 1).protection = Protection(
-                locked=True
-            )
 
         for offset, column in enumerate(metric_columns):
             col_idx = metric_start_col + offset
@@ -1439,8 +1461,6 @@ def create_evolution_sheets(
                 get_column_letter(col_idx)
             ].width = TOUCH_ROSTER_COLUMN_WIDTH
 
-        ws.protection.sheet = True
-        ws.protection.enable()
         for row_idx in range(first_candidate_row, edit_row_end + 1):
             apply_touch_row_height(ws, row_idx)
             row_fill = ROW_STRIPE_FILLS[
@@ -1452,7 +1472,6 @@ def create_evolution_sheets(
                     apply_table_cell_style(cell, WHITE_FILL)
                 else:
                     cell.fill = WHITE_FILL
-                cell.protection = Protection(locked=True)
             for offset, column in enumerate(metric_columns):
                 col_idx = metric_start_col + offset
                 cell = ws.cell(row=row_idx, column=col_idx)
@@ -1479,7 +1498,6 @@ def create_evolution_sheets(
                         )
                 else:
                     cell.fill = WHITE_FILL
-                cell.protection = Protection(locked=False)
 
 
 def default_output_path(loaded: LoadedTemplateConfig) -> Path:

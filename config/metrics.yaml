@@ -31,8 +31,6 @@ metrics:
     type: timed
     unit: seconds
     input_kind: measured
-    excel_input:
-      entry_style: mm_ss
 
   - metric_id: m_ocourse_pass_fail
     display_name: O Course Pass/Fail
@@ -47,22 +45,18 @@ metrics:
     input_kind: evaluator
 
   - metric_id: m_run_time_seconds
-    display_name: Run - Time (mm:ss.0)
+    display_name: Run - Time (mm:ss)
     type: timed
     unit: seconds
     input_kind: measured
-    min_pass: 10:30
-    excel_input:
-      entry_style: mm_ss
+    min_pass: "10:30"
 
   - metric_id: m_swim_time_seconds
-    display_name: Swim - Time (mm:ss.0)
+    display_name: Swim - Time (mm:ss)
     type: timed
     unit: seconds
     input_kind: measured
-    min_pass: 12:30
-    excel_input:
-      entry_style: mm_ss
+    min_pass: "12:30"
 
   - metric_id: m_25m_uw_swim
     display_name: 25M Underwater Swim
@@ -101,12 +95,10 @@ metrics:
     input_kind: evaluator
 
   - metric_id: m_4_5_mile_run_time_seconds
-    display_name: 4.5 Mile Ruck Run - Time (mm:ss.0)
+    display_name: 4.5 Mile Ruck Run - Time (mm:ss)
     type: timed
     unit: seconds
     input_kind: measured
-    excel_input:
-      entry_style: mm_ss
 
   # --- Team / rubric scoring ---
   - metric_id: m_ibs_low_carry_physicality
@@ -268,36 +260,16 @@ metrics:
     input_kind: evaluator
 
   - metric_id: m_5mile_run_time_seconds
-    display_name: 5 Mile Run - Time (mm:ss.0)
+    display_name: 5 Mile Run - Time (mm:ss)
     type: timed
     unit: seconds
     input_kind: measured
-    excel_input:
-      entry_style: mm_ss
-      minutes_field: m_5mile_run_minutes
-      seconds_field: m_5mile_run_seconds
-
-  - metric_id: m_5mile_run_minutes
-    display_name: 5 Mile Run - Minutes (entry)
-    type: integer
-    unit: minutes
-    input_kind: entry_helper
-    hidden_in_export: true
-
-  - metric_id: m_5mile_run_seconds
-    display_name: 5 Mile Run - Seconds (entry)
-    type: integer
-    unit: seconds
-    input_kind: entry_helper
-    hidden_in_export: true
 
   - metric_id: m_obstacle_course_time_seconds
-    display_name: Obstacle Course - Time (mm:ss.0)
+    display_name: Obstacle Course - Time (mm:ss)
     type: timed
     unit: seconds
     input_kind: measured
-    excel_input:
-      entry_style: mm_ss
 
   - metric_id: m_obstacle_course_ratio_complete
     display_name: Obstacle Course - Ratio Complete
@@ -306,28 +278,22 @@ metrics:
     input_kind: measured
 
   - metric_id: m_circuit_pt_time_seconds
-    display_name: Circuit PT - Time (mm:ss.0)
+    display_name: Circuit PT - Time (mm:ss)
     type: timed
     unit: seconds
     input_kind: measured
-    excel_input:
-      entry_style: mm_ss
 
   - metric_id: m_6mile_ruck_run_time_seconds
-    display_name: 6 Mile Ruck Run - Time (mm:ss.0)
+    display_name: 6 Mile Ruck Run - Time (mm:ss)
     type: timed
     unit: seconds
     input_kind: measured
-    excel_input:
-      entry_style: mm_ss
 
   - metric_id: m_1nm_swim_time_seconds
-    display_name: 1 NM Swim - Time (mm:ss.0)
+    display_name: 1 NM Swim - Time (mm:ss)
     type: timed
     unit: seconds
     input_kind: measured
-    excel_input:
-      entry_style: mm_ss
 
   - metric_id: m_final_team_event_physicality
     display_name: Final Team Event - Physicality

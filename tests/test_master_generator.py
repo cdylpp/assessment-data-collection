@@ -3,9 +3,11 @@ from __future__ import annotations
 import sys
 import tempfile
 import unittest
+from datetime import timedelta
 from pathlib import Path
 
 from openpyxl import load_workbook
+from openpyxl.utils import get_column_letter
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -84,6 +86,14 @@ def column_for_machine_header(ws: object, machine_header: str) -> int:
     raise ValueError("Machine header not found: {0}".format(machine_header))
 
 
+def conditional_format_formulas(ws: object) -> list[str]:
+    formulas = []
+    for conditional_format in ws.conditional_formatting:
+        for rule in ws.conditional_formatting[conditional_format]:
+            formulas.extend(rule.formula or [])
+    return formulas
+
+
 class MasterGeneratorTest(unittest.TestCase):
     def test_generate_master_workbook_from_single_node_workbook(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -136,22 +146,30 @@ class MasterGeneratorTest(unittest.TestCase):
                 self.assertEqual(ws["H2"].value, 61)
                 self.assertEqual(ws["I2"].value, 62)
                 self.assertEqual(ws["J2"].value, 13)
-                self.assertEqual(ws["K2"].value, 630)
-                self.assertEqual(ws["L2"].value, 720)
+                self.assertEqual(ws["K2"].value, timedelta(minutes=10, seconds=30))
+                self.assertEqual(ws["K2"].number_format, "[mm]:ss")
+                self.assertEqual(ws["L2"].value, timedelta(minutes=12))
+                self.assertEqual(ws["L2"].number_format, "[mm]:ss")
+                formulas = conditional_format_formulas(ws)
+                self.assertTrue(
+                    any("K2>0.007291" in formula for formula in formulas),
+                    formulas,
+                )
+                self.assertFalse(
+                    any("K2>630" in formula for formula in formulas),
+                    formulas,
+                )
             finally:
                 workbook.close()
 
-    def test_timed_values_support_mm_ss_entry_style(self) -> None:
-        self.assertEqual(normalize_timed_value(10.30, entry_style="mm_ss"), 630)
-        self.assertEqual(normalize_timed_value("10.30", entry_style="mm_ss"), 630)
-        self.assertEqual(normalize_timed_value("10:30", entry_style="mm_ss"), 630)
-        self.assertEqual(normalize_timed_value(12, entry_style="mm_ss"), 720)
-        self.assertEqual(
-            normalize_timed_value(600 / 86400, entry_style="mm_ss"),
-            600,
-        )
+    def test_timed_values_support_minutes_seconds_entry(self) -> None:
+        self.assertEqual(normalize_timed_value(10.30), 630)
+        self.assertEqual(normalize_timed_value("10.30"), 630)
+        self.assertEqual(normalize_timed_value("10:30"), 630)
+        self.assertEqual(normalize_timed_value(12), 720)
+        self.assertEqual(normalize_timed_value(600 / 86400), 600)
         with self.assertRaises(ValueError):
-            normalize_timed_value("10.60", entry_style="mm_ss")
+            normalize_timed_value("10.60")
 
     def test_early_exit_rows_are_set_aside(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -272,6 +290,7 @@ class MasterGeneratorTest(unittest.TestCase):
                 first_row_idx = ids.index(first_roster_row["uid"]) + 3
 
                 push_ups_col = column_for_machine_header(ws, "m_push_ups")
+                run_col = column_for_machine_header(ws, "m_run_time_seconds")
                 pass_fail_col = column_for_machine_header(ws, "m_ocourse_pass_fail")
                 subjective_col = column_for_machine_header(
                     ws,
@@ -291,6 +310,22 @@ class MasterGeneratorTest(unittest.TestCase):
                     14 / 6,
                 )
                 self.assertGreater(len(ws.conditional_formatting), 0)
+                run_col_letter = get_column_letter(run_col)
+                formulas = conditional_format_formulas(ws)
+                self.assertTrue(
+                    any(
+                        "{0}3>0.007291".format(run_col_letter) in formula
+                        for formula in formulas
+                    ),
+                    formulas,
+                )
+                self.assertFalse(
+                    any(
+                        "{0}3>630".format(run_col_letter) in formula
+                        for formula in formulas
+                    ),
+                    formulas,
+                )
 
                 early_exit_ws = workbook["EARLY_EXITS"]
                 self.assertEqual(early_exit_ws["A2"].value, second_roster_row["uid"])

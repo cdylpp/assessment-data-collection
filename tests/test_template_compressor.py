@@ -90,7 +90,7 @@ class TemplateCompressorTest(unittest.TestCase):
                     )
                 )
 
-            set_sheet_value(node_a_path, "5 Mile Run", "D4", 23.6)
+            set_sheet_value(node_a_path, "5 Mile Run", "D4", 23.06)
             set_sheet_value(node_b_path, "5 Mile Run", "D5", 30.57)
 
             generated_path = compress_template_workbooks(
