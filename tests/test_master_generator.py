@@ -111,13 +111,13 @@ class MasterGeneratorTest(unittest.TestCase):
                 )
             )
 
-            set_sheet_value(node_path, "PST", "D1", "Push Ups Custom Label")
+            set_sheet_value(node_path, "PST", "E1", "Push Ups Custom Label")
             rename_sheet(node_path, "PST", "PST Custom")
-            set_sheet_value(node_path, "PST Custom", "D4", 61)
-            set_sheet_value(node_path, "PST Custom", "E4", 62)
-            set_sheet_value(node_path, "PST Custom", "F4", 13)
-            set_sheet_value(node_path, "PST Custom", "G4", 10.30)
-            set_sheet_value(node_path, "PST Custom", "H4", "12.00")
+            set_sheet_value(node_path, "PST Custom", "E4", 61)
+            set_sheet_value(node_path, "PST Custom", "F4", 62)
+            set_sheet_value(node_path, "PST Custom", "G4", 13)
+            set_sheet_value(node_path, "PST Custom", "H4", 10.30)
+            set_sheet_value(node_path, "PST Custom", "I4", "12.00")
 
             generated_path = generate_master_workbook(
                 MasterGenerationRequest(
@@ -186,9 +186,9 @@ class MasterGeneratorTest(unittest.TestCase):
                     entry_rows=10,
                 )
             )
-            set_sheet_value(node_path, "PST", "D4", "MED PULL")
-            set_sheet_value(node_path, "PST", "E4", 55)
-            set_sheet_value(node_path, "PST", "D5", 45)
+            set_sheet_value(node_path, "PST", "E4", "MED PULL")
+            set_sheet_value(node_path, "PST", "F4", 55)
+            set_sheet_value(node_path, "PST", "E5", 45)
 
             generated_path = generate_master_workbook(
                 MasterGenerationRequest(
@@ -351,10 +351,10 @@ class MasterGeneratorTest(unittest.TestCase):
                     )
                 )
 
-            set_sheet_value(node_a_path, "PST", "D4", 45)
-            set_sheet_value(node_b_path, "PST", "E4", 55)
-            set_sheet_value(node_a_path, "Log PT", "D4", 3)
-            set_sheet_value(node_b_path, "Log Carry around O Course", "D4", 5)
+            set_sheet_value(node_a_path, "PST", "E4", 45)
+            set_sheet_value(node_b_path, "PST", "F4", 55)
+            set_sheet_value(node_a_path, "Log PT", "E4", 3)
+            set_sheet_value(node_b_path, "Log Carry around O Course", "E4", 5)
 
             generated_path = generate_master_workbook(
                 MasterGenerationRequest(
@@ -397,7 +397,7 @@ class MasterGeneratorTest(unittest.TestCase):
                     entry_rows=10,
                 )
             )
-            set_sheet_value(node_a_path, "PST", "D4", 45)
+            set_sheet_value(node_a_path, "PST", "E4", 45)
 
             generate_master_workbook(
                 MasterGenerationRequest(
@@ -421,7 +421,7 @@ class MasterGeneratorTest(unittest.TestCase):
                     entry_rows=10,
                 )
             )
-            set_sheet_value(node_b_path, "PST", "E4", 55)
+            set_sheet_value(node_b_path, "PST", "F4", 55)
 
             generate_master_workbook(
                 MasterGenerationRequest(

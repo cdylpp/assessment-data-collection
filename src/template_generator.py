@@ -14,7 +14,7 @@ from openpyxl import Workbook
 from openpyxl.comments import Comment
 from openpyxl.formatting.rule import FormulaRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
-from openpyxl.utils import get_column_letter
+from openpyxl.utils import column_index_from_string, get_column_letter
 from openpyxl.workbook.defined_name import DefinedName
 from openpyxl.worksheet.datavalidation import DataValidation
 
@@ -78,6 +78,7 @@ COMMENT_AUTHOR = "Assessment Template"
 DEFAULT_ENTRY_ROWS = 200
 DEFAULT_CONFIG_PATH = "config/config.yaml"
 DEFAULT_LOCKED_LEFT_COLUMNS = ["uid", "first", "last"]
+SHEET_KEY_FIELD = "uid"
 PathLike = Union[str, Path]
 
 
@@ -437,6 +438,12 @@ def configured_locked_left_columns(
     return columns
 
 
+def sheet_roster_fields_with_key(roster_fields: Sequence[str]) -> List[str]:
+    return [SHEET_KEY_FIELD] + [
+        field for field in roster_fields if field != SHEET_KEY_FIELD
+    ]
+
+
 def configured_required_roster_columns(config_doc: Mapping[str, Any]) -> List[str]:
     sheet_contract = config_doc.get("sheet_contract", {})
     if sheet_contract is None:
@@ -745,15 +752,19 @@ def shifted_freeze_panes(
     *,
     original_first_candidate_row: int,
     first_candidate_row: int,
+    column_offset: int = 0,
 ) -> Any:
     if not isinstance(freeze_panes, str):
         return freeze_panes
     match = re.fullmatch(r"([A-Za-z]+)([0-9]+)", freeze_panes)
     if not match:
         return freeze_panes
+    freeze_col = column_index_from_string(match.group(1)) + column_offset
     freeze_row = int(match.group(2))
     if freeze_row == original_first_candidate_row:
-        return "{0}{1}".format(match.group(1), first_candidate_row)
+        freeze_row = first_candidate_row
+    if column_offset or freeze_row != int(match.group(2)):
+        return "{0}{1}".format(get_column_letter(freeze_col), freeze_row)
     return freeze_panes
 
 
@@ -1309,6 +1320,7 @@ def create_evolution_sheets(
         sheet_contract.get("freeze_panes", "D3"),
         original_first_candidate_row=configured_first_candidate_row,
         first_candidate_row=first_candidate_row,
+        column_offset=1,
     )
 
     edit_row_count = max(len(roster_rows), entry_rows)
@@ -1321,7 +1333,8 @@ def create_evolution_sheets(
         evolution = evolution_instance.to_evolution_mapping()
         ws = wb.create_sheet(evolution_sheet_name(evolution))
 
-        roster_fields = configured_locked_left_columns(sheet_contract, evolution)
+        visible_roster_fields = configured_locked_left_columns(sheet_contract, evolution)
+        roster_fields = sheet_roster_fields_with_key(visible_roster_fields)
         metric_columns = evolution_metric_columns(evolution)
         metric_styles = metric_fill_styles(metric_columns)
         roster_headers = {"uid": "UID", "first": "First", "last": "Last"}
@@ -1460,6 +1473,7 @@ def create_evolution_sheets(
             ws.column_dimensions[
                 get_column_letter(col_idx)
             ].width = TOUCH_ROSTER_COLUMN_WIDTH
+        ws.column_dimensions["A"].hidden = True
 
         for row_idx in range(first_candidate_row, edit_row_end + 1):
             apply_touch_row_height(ws, row_idx)

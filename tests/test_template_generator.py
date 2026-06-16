@@ -143,7 +143,13 @@ class TemplateGeneratorSmokeTest(unittest.TestCase):
                 roster_fields = loaded.config_doc["sheet_contract"][
                     "locked_left_columns"
                 ]
-                for col_idx, field in enumerate(roster_fields, start=1):
+                self.assertTrue(pst.column_dimensions["A"].hidden)
+                self.assertEqual(pst.cell(row=3, column=1).value, "uid")
+                self.assertEqual(
+                    pst.cell(row=4, column=1).value,
+                    workbook["ROSTER"]["A2"].value,
+                )
+                for col_idx, field in enumerate(roster_fields, start=2):
                     self.assertEqual(pst.cell(row=3, column=col_idx).value, field)
                     roster_column = {"uid": "A", "first": "B", "last": "C"}.get(field)
                     if roster_column:
@@ -151,7 +157,7 @@ class TemplateGeneratorSmokeTest(unittest.TestCase):
                             pst.cell(row=4, column=col_idx).value,
                             workbook["ROSTER"]["{0}2".format(roster_column)].value,
                         )
-                metric_start_col = len(roster_fields) + 1
+                metric_start_col = len(roster_fields) + 2
                 run_time_col = metric_start_col + 3
                 run_time_col_letter = get_column_letter(run_time_col)
                 first_metric_cell = pst.cell(row=4, column=metric_start_col)
@@ -160,11 +166,11 @@ class TemplateGeneratorSmokeTest(unittest.TestCase):
                     "m_push_ups",
                 )
                 if "cohort" in roster_fields:
-                    cohort_col = roster_fields.index("cohort") + 1
+                    cohort_col = roster_fields.index("cohort") + 2
                     self.assertEqual(pst.cell(row=4, column=cohort_col).value, "A")
                 self.assertIsNotNone(first_metric_cell.comment)
                 self.assertIn("Candidate: Lucas Andrew", first_metric_cell.comment.text)
-                self.assertEqual(pst.freeze_panes, "D4")
+                self.assertEqual(pst.freeze_panes, "E4")
                 self.assertEqual(
                     pst.cell(row=4, column=run_time_col).number_format,
                     "[mm]:ss",
@@ -203,8 +209,8 @@ class TemplateGeneratorSmokeTest(unittest.TestCase):
                     24,
                 )
                 self.assertNotEqual(
-                    pst["D4"].fill.fgColor.rgb,
-                    pst["D5"].fill.fgColor.rgb,
+                    first_metric_cell.fill.fgColor.rgb,
+                    pst.cell(row=5, column=metric_start_col).fill.fgColor.rgb,
                 )
 
                 grit = workbook["Grit PT #1"]
@@ -216,34 +222,34 @@ class TemplateGeneratorSmokeTest(unittest.TestCase):
                 occurrence_count = grit_config["metric_occurrences"][
                     "m_grit_pt_physicality"
                 ]
-                self.assertEqual(grit["D1"].value, "Grit PT - Physicality")
-                self.assertEqual(grit["W1"].value, "evolution_id")
-                self.assertEqual(grit["X1"].value, "evo_grit_pt")
-                self.assertEqual(grit["W2"].value, "event_id")
-                self.assertEqual(grit["X2"].value, "soac_fy_2026_block1")
-                self.assertEqual(grit["W4"].value, "event_instance_id")
+                self.assertEqual(grit["E1"].value, "Grit PT - Physicality")
+                self.assertEqual(grit["X1"].value, "evolution_id")
+                self.assertEqual(grit["Y1"].value, "evo_grit_pt")
+                self.assertEqual(grit["X2"].value, "event_id")
+                self.assertEqual(grit["Y2"].value, "soac_fy_2026_block1")
+                self.assertEqual(grit["X4"].value, "event_instance_id")
                 self.assertEqual(
-                    grit["X4"].value,
+                    grit["Y4"].value,
                     "soac_fy_2026_block1__evo_grit_pt__1",
                 )
-                self.assertEqual(grit["W5"].value, "event_occurrence_index")
-                self.assertEqual(grit["X5"].value, 1)
-                self.assertEqual(grit["D2"].value, 1)
-                self.assertEqual(grit["I2"].value, occurrence_count)
-                self.assertEqual(grit["D3"].value, "m_grit_pt_physicality")
+                self.assertEqual(grit["X5"].value, "event_occurrence_index")
+                self.assertEqual(grit["Y5"].value, 1)
+                self.assertEqual(grit["E2"].value, 1)
+                self.assertEqual(grit["J2"].value, occurrence_count)
+                self.assertEqual(grit["E3"].value, "m_grit_pt_physicality")
                 self.assertIn(
-                    "D1:I1",
+                    "E1:J1",
                     [str(merged_range) for merged_range in grit.merged_cells.ranges],
                 )
-                repeated_fill = grit["D2"].fill.fgColor.rgb
-                self.assertNotEqual(grit["D4"].fill.fgColor.rgb, "00FFFFFF")
-                self.assertEqual(grit["D4"].fill.fgColor.rgb, grit["I4"].fill.fgColor.rgb)
-                self.assertNotEqual(grit["D4"].fill.fgColor.rgb, grit["J4"].fill.fgColor.rgb)
-                self.assertNotEqual(grit["D4"].fill.fgColor.rgb, grit["D5"].fill.fgColor.rgb)
-                self.assertEqual(grit["D4"].border.right.style, "thin")
-                self.assertEqual(grit["D9"].fill.fgColor.rgb, "00FFFFFF")
+                repeated_fill = grit["E2"].fill.fgColor.rgb
+                self.assertNotEqual(grit["E4"].fill.fgColor.rgb, "00FFFFFF")
+                self.assertEqual(grit["E4"].fill.fgColor.rgb, grit["J4"].fill.fgColor.rgb)
+                self.assertNotEqual(grit["E4"].fill.fgColor.rgb, grit["K4"].fill.fgColor.rgb)
+                self.assertNotEqual(grit["E4"].fill.fgColor.rgb, grit["E5"].fill.fgColor.rgb)
+                self.assertEqual(grit["E4"].border.right.style, "thin")
+                self.assertEqual(grit["E9"].fill.fgColor.rgb, "00FFFFFF")
                 for offset in range(occurrence_count):
-                    col_idx = 4 + offset
+                    col_idx = 5 + offset
                     self.assertEqual(
                         grit.cell(row=2, column=col_idx).value,
                         offset + 1,
@@ -353,7 +359,7 @@ class TemplateGeneratorSmokeTest(unittest.TestCase):
             try:
                 self.assertIn("Custom Evolution", workbook.sheetnames)
                 self.assertEqual(
-                    workbook["Custom Evolution"]["D3"].value,
+                    workbook["Custom Evolution"]["E3"].value,
                     "m_custom_score",
                 )
             finally:
@@ -446,7 +452,7 @@ class TemplateGeneratorSmokeTest(unittest.TestCase):
 
             workbook = load_workbook(generated_path)
             try:
-                self.assertIsNone(workbook["PST"]["D4"].comment)
+                self.assertIsNone(workbook["PST"]["E4"].comment)
             finally:
                 workbook.close()
 
@@ -486,7 +492,9 @@ class TemplateGeneratorSmokeTest(unittest.TestCase):
 
             workbook = load_workbook(generated_path)
             try:
+                self.assertTrue(workbook["PST"].column_dimensions["A"].hidden)
                 self.assertEqual(workbook["PST"]["A3"].value, "uid")
+                self.assertEqual(workbook["PST"]["B3"].value, "first")
                 self.assertEqual(workbook["PST"]["D3"].value, "m_push_ups")
             finally:
                 workbook.close()

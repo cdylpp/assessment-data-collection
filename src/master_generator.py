@@ -27,6 +27,7 @@ from template_generator import (
     load_generation_inputs,
     load_yaml,
     resolve_path,
+    sheet_roster_fields_with_key,
 )
 
 
@@ -839,12 +840,14 @@ def validate_node_workbook_meta(
 
 def configured_roster_fields(loaded: LoadedMasterConfig) -> List[str]:
     sheet_contract = loaded.template.config_doc.get("sheet_contract", {})
-    return configured_locked_left_columns(sheet_contract)
+    return sheet_roster_fields_with_key(configured_locked_left_columns(sheet_contract))
 
 
 def all_configured_roster_fields(loaded: LoadedMasterConfig) -> List[str]:
     sheet_contract = loaded.template.config_doc.get("sheet_contract", {})
-    roster_fields = configured_locked_left_columns(sheet_contract)
+    roster_fields = sheet_roster_fields_with_key(
+        configured_locked_left_columns(sheet_contract)
+    )
     for evolution in loaded.template.evolutions_doc.get("evolutions", []):
         if not isinstance(evolution, dict):
             continue

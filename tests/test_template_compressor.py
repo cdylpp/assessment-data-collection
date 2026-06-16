@@ -51,9 +51,9 @@ class TemplateCompressorTest(unittest.TestCase):
                     )
                 )
 
-            set_sheet_value(node_a_path, "PST", "D4", 61)
-            set_sheet_value(node_b_path, "PST", "E4", 62)
-            set_sheet_value(node_b_path, "Grit PT #1", "D5", 3)
+            set_sheet_value(node_a_path, "PST", "E4", 61)
+            set_sheet_value(node_b_path, "PST", "F4", 62)
+            set_sheet_value(node_b_path, "Grit PT #1", "E5", 3)
 
             generated_path = compress_template_workbooks(
                 TemplateCompressionRequest(
@@ -66,9 +66,9 @@ class TemplateCompressorTest(unittest.TestCase):
             self.assertEqual(generated_path, output_path.resolve())
             workbook = load_workbook(generated_path, data_only=True)
             try:
-                self.assertEqual(workbook["PST"]["D4"].value, 61)
-                self.assertEqual(workbook["PST"]["E4"].value, 62)
-                self.assertEqual(workbook["Grit PT #1"]["D5"].value, 3)
+                self.assertEqual(workbook["PST"]["E4"].value, 61)
+                self.assertEqual(workbook["PST"]["F4"].value, 62)
+                self.assertEqual(workbook["Grit PT #1"]["E5"].value, 3)
             finally:
                 workbook.close()
 
@@ -90,8 +90,8 @@ class TemplateCompressorTest(unittest.TestCase):
                     )
                 )
 
-            set_sheet_value(node_a_path, "5 Mile Run", "D4", 23.06)
-            set_sheet_value(node_b_path, "5 Mile Run", "D5", 30.57)
+            set_sheet_value(node_a_path, "5 Mile Run", "E4", 23.06)
+            set_sheet_value(node_b_path, "5 Mile Run", "E5", 30.57)
 
             generated_path = compress_template_workbooks(
                 TemplateCompressionRequest(
@@ -103,8 +103,8 @@ class TemplateCompressorTest(unittest.TestCase):
 
             workbook = load_workbook(generated_path, data_only=True)
             try:
-                row_four_value = workbook["5 Mile Run"]["D4"].value
-                row_five_value = workbook["5 Mile Run"]["D5"].value
+                row_four_value = workbook["5 Mile Run"]["E4"].value
+                row_five_value = workbook["5 Mile Run"]["E5"].value
                 self.assertEqual(row_four_value, timedelta(minutes=23, seconds=6))
                 self.assertEqual(row_five_value, timedelta(minutes=30, seconds=57))
             finally:
@@ -128,8 +128,8 @@ class TemplateCompressorTest(unittest.TestCase):
                     )
                 )
 
-            set_sheet_value(node_a_path, "PST", "D4", 61)
-            set_sheet_value(node_b_path, "PST", "D4", 62)
+            set_sheet_value(node_a_path, "PST", "E4", 61)
+            set_sheet_value(node_b_path, "PST", "E4", 62)
 
             with self.assertRaises(TemplateCompressionConflictError) as raised:
                 compress_template_workbooks(
@@ -143,7 +143,7 @@ class TemplateCompressorTest(unittest.TestCase):
             message = str(raised.exception)
             self.assertIn("node_a.xlsx", message)
             self.assertIn("node_b.xlsx", message)
-            self.assertIn("PST!D4 row 4", message)
+            self.assertIn("PST!E4 row 4", message)
             self.assertIn("61", message)
             self.assertIn("62", message)
             self.assertFalse(output_path.exists())

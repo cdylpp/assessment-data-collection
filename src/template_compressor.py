@@ -23,6 +23,7 @@ from template_generator import (
     TemplateGenerationRequest,
     configured_locked_left_columns,
     load_generation_inputs,
+    sheet_roster_fields_with_key,
 )
 
 
@@ -157,7 +158,9 @@ def compressed_cell_value_for_metric(value: Any, metric: Mapping[str, Any]) -> A
 
 def all_configured_roster_fields_from_template(loaded: Any) -> List[str]:
     sheet_contract = loaded.config_doc.get("sheet_contract", {})
-    roster_fields = configured_locked_left_columns(sheet_contract)
+    roster_fields = sheet_roster_fields_with_key(
+        configured_locked_left_columns(sheet_contract)
+    )
     for evolution in loaded.evolutions_doc.get("evolutions", []):
         if not isinstance(evolution, dict):
             continue
